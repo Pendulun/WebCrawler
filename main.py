@@ -1,9 +1,11 @@
 import sys
+from Crawler import Crawler
+import utils
 
-class UndefinedCommand(Exception):
+class UndefinedCommandError(Exception):
     pass
 
-class ArgsWrongType(Exception):
+class ArgsWrongTypeError(Exception):
     pass
 
 def printUsage():
@@ -31,7 +33,7 @@ def getConfigFromArgs(validCommands):
 
                     except ValueError as e:
 
-                        raise ArgsWrongType("Wrong value type for command '", 
+                        raise ArgsWrongTypeError("Wrong value type for command '", 
                                             sys.argv[posCommandExpected],
                                             "'. type() == int expected but '",
                                             sys.argv[posCommandExpected+1],
@@ -44,16 +46,12 @@ def getConfigFromArgs(validCommands):
                     argsConfig['debugMode'] = True
                     posCommandExpected += 1
         else:
-            raise UndefinedCommand("Unsupported command: ",sys.argv[posCommandExpected])
+            raise UndefinedCommandError("Unsupported command: ",sys.argv[posCommandExpected])
         
         if posCommandExpected >= len(sys.argv):
             readAllCommands = True
         
     return argsConfig
-
-def printErrorMessageAndExitWithErrorCode(exceptionRaised, errorCode):
-    print("".join(exceptionRaised.args))
-    exit(errorCode)
 
 def getConfigDictTemplate():
     templateConfig = dict()
@@ -73,10 +71,15 @@ if __name__ == "__main__":
         configs = dict()
         try:
             configs = getConfigFromArgs(VALIDCOMMANDS)
-        except UndefinedCommand as e:
-            printErrorMessageAndExitWithErrorCode(e, 1)
-        except ArgsWrongType as e:
-            printErrorMessageAndExitWithErrorCode(e, 1)
+        except UndefinedCommandError as e:
+            utils.printErrorMessageAndExitWithErrorCode(e, 1)
+        except ArgsWrongTypeError as e:
+            utils.printErrorMessageAndExitWithErrorCode(e, 1)
         else:
             print("Todos o comandos foram aceitos")
             print(configs)
+            myCrawler = Crawler(configs['LIMIT'])
+            try:
+                myCrawler.startCrawlingFromSeedsFile(configs['seedPathFile'])
+            except FileNotFoundError as e:
+                utils.printErrorMessageAndExitWithErrorCode(e, 1)
