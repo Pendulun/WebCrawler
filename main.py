@@ -78,7 +78,8 @@ if __name__ == "__main__":
         else:
             print("Todos o comandos foram aceitos")
             print(configs)
-            myCrawler = Crawler(configs['LIMIT'])
+            NUMWORKERS = 4
+            myCrawler = Crawler(configs['LIMIT'], NUMWORKERS)
             try:
                 myCrawler.startCrawlingFromSeedsFile(configs['seedPathFile'])
             except FileNotFoundError as e:
