@@ -2,6 +2,8 @@ from queue import PriorityQueue
 from collections import deque
 import utils
 from WorkersPipeline import WorkersPipeline
+import urllib3
+import certifi
 
 class Worker():
 
@@ -126,4 +128,38 @@ class Worker():
         requestsToBeDone = self._hostsResourses
 
         return f"Hosts on Queue:\n{hostsOnQueue}\nRequests to be Done:\n{requestsToBeDone}\nRequests Made:\n{requestsMade}"
+
+    def crawl(self):
+        # http = self._getCustomPoolManager()
+
+        # #Ver se vale a pena separar por host
+        # #https://urllib3.readthedocs.io/en/stable/advanced-usage.html#customizing-pool-behavior
+        # while not self.pagesQueue.empty():
+        #     currPageLink = self.pagesQueue.get()
+            
+        #     httpResponse = http.request('GET', currPageLink)
+        #     #httpResponse é do tipo urllib3.response.HTTPResponse
+        #     #https://urllib3.readthedocs.io/en/stable/reference/urllib3.response.html?highlight=HTTPResponse#urllib3.response.HTTPResponse
+
+
+        #     print(f"Fez requisição para: {currPageLink}")
+
+
+        #     #Talvez tratar quando a resposta for redirecionada
+        #     print(f"Recebeu resposta de: {httpResponse.geturl()}")
+
+        #     print(f"Response status: {httpResponse.status}")
+        #     print(httpResponse.data)
+
+        #     if httpResponse.status == 200:
+        #         print("Resposta 200")
+        print(f"Olá da Thread {self._id}")
         
+
+    # def _getCustomPoolManager(self):
+    #     customRetries = urllib3.Retry(3, redirect=10)
+    #     return urllib3.PoolManager(
+    #                                 retries=customRetries,
+    #                                 cert_reqs='CERT_REQUIRED',
+    #                                 ca_certs=certifi.where()
+    #                             )

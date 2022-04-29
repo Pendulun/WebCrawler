@@ -1,7 +1,6 @@
 from collections import deque
 import utils
 from threading import Lock
-from Worker import Worker
 
 class WorkersPipeline():
     def __init__(self, workers:dict):
