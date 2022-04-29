@@ -1,55 +1,44 @@
-from queue import PriorityQueue, Queue
+from queue import PriorityQueue
+from collections import deque
 import utils
 import urllib3
 import certifi
+from Worker import Worker
+from WorkersPipeline import WorkersPipeline
 
 class MaxPagesToCrawlReachedError(Exception):
     pass
-
-class HostsInfoContainer():
-    def __init__(self):
-        self._hostsInfoMap = dict()
     
-    @property
-    def hostsInfoMap(self):
-        return self._hostsInfoMap
-    
-    @hostsInfoMap.setter
-    def hostsInfoMap(self, newHostsInfoMap):
-        raise AttributeError("hostsInfoMap is read only!")
-
-    def addHost(self, hostLink):
-        pass
-
-class HostInfo():
-    def __init__(self, hostName):
-        self._hostName = hostName
-    
-    @property
-    def hostName(self):
-        return self._hostName
-    
-    @hostName.setter
-    def hostName(self, newHostName):
-        raise AttributeError("hostName is read only!")
-
-
 class Crawler():
     def __init__(self, pagesCrawledLimit, numWorkers=1):
-        self._pagesLimit = pagesCrawledLimit
-        self._pagesQueue = Queue() #Pode ser que vire um PriorityQueue
+        
+        self._workersQueues = {workerId:Worker(workerId) for workerId in range(numWorkers)}
+        self._workersPipeline = WorkersPipeline(self._workersQueues)
+
+        for (_, worker) in self._workersQueues.items():
+            worker.workersPipeline = self._workersPipeline 
+
         self._pagesCrawled = 0
+        self._pagesLimit = pagesCrawledLimit
         self._numWorkers = numWorkers
-        # self._hostsInfo = TERMINAR DE CRIAR UM MAP DE HOSTS   
     
     @property
-    def pagesQueue(self):
-        """The Queue of pages to be crawled"""
-        return self._pagesQueue
-
-    @pagesQueue.setter
-    def pagesQueue(self, newQueue):
-        raise AttributeError("pagesQueue is read only")
+    def workersQueues(self):
+        """The Workers"""
+        raise AttributeError("workersQueues is not readable or writable")
+    
+    @workersQueues.setter
+    def pagesLimit(self, newWorkersQueues):
+        raise AttributeError("workersQueues is not readable or writable")
+    
+    @property
+    def workersPipeline(self):
+        """The communicator between workers"""
+        raise AttributeError("workersPipeline is not readable or writable")
+    
+    @pagesLimit.setter
+    def workersPipeline(self, newWorkersPipeline):
+        raise AttributeError("workersPipeline is not readable or writable")
     
     @property
     def pagesLimit(self):
@@ -76,45 +65,44 @@ class Crawler():
     
     @numWorkers.setter
     def numWorkers(self, newNumWorkers):
-        self._numWorkers = newNumWorkers
+        raise AttributeError("newNumWorkers is read-only")
 
     def startCrawlingFromSeedsFile(self, seedsFilePath):
-        self.__addPageLinksToCrawlFromFile(seedsFilePath)
-        print(f"Queue size: {self._pagesQueue.qsize()}")
-        self.__crawUntilLimit()
+        self.__distributeSeedsForWorkers(seedsFilePath)
+        #self.__crawUntilLimit()
+        self.__getHostsAndResourcesFromWorkers()
 
     
-    def __addPageLinksToCrawlFromFile(self, seedsFilePath):
+    def __distributeSeedsForWorkers(self, seedsFilePath):
         with open(seedsFilePath, 'r') as seedsFile:
             print("Abriu Arquivo")
             
-            line = seedsFile.readline()
+            link = seedsFile.readline().rstrip('\n')
+
             reachedMaxPagesEnqueued = False
 
-            while line and not reachedMaxPagesEnqueued:
+            while link and not reachedMaxPagesEnqueued:
                 try:
-                    #LER O ROBOTS DO HOST
-                    #https://docs.python.org/3/library/urllib.robotparser.html
-                    #https://urllib3.readthedocs.io/en/stable/reference/urllib3.util.html?highlight=parse#urllib3.util.parse_url
-                    #https://urllib3.readthedocs.io/en/stable/reference/urllib3.util.html?highlight=parse#urllib3.util.Url
-                    self.__addPageLinkToCrawl(line)
+                    self.__sendLinkForThread(link)
                 except MaxPagesToCrawlReachedError as e:
                     utils.printJoinedErrorMessage(e)
                     reachedMaxPagesEnqueued = True
                 else:
-                    line = seedsFile.readline()
+                    link = seedsFile.readline().rstrip('\n')
 
-    def __addPageLinkToCrawl(self, newPageLink):
+    def __sendLinkForThread(self, newPageLink):
         
         if self._pagesCrawled < self._pagesLimit:
+            
+            threadOfHost = utils.threadOfHost(utils.getHostOfLink(newPageLink))
+            
+            self._workersQueues[threadOfHost].addLinkToRequest(newPageLink)
 
-            self._pagesQueue.put(newPageLink)
+            #ISSO TA ERRADO
             self._pagesCrawled +=1
-            print(f"Adicionou link: {newPageLink}")
-
         else:
-            raise MaxPagesToCrawlReachedError(   "Can't enqueue more pages to Crawl.",
-                                            f" Limit of {self._pagesLimit} already reached!")
+            raise MaxPagesToCrawlReachedError(  "Can't enqueue more pages to Crawl.",
+                                                f" Limit of {self._pagesLimit} already reached!")
     
     def __crawUntilLimit(self):
 
@@ -141,24 +129,13 @@ class Crawler():
 
             if httpResponse.status == 200:
                 print("Resposta 200")
-
-
-
-        #Enquanto a fila não estiver vazia
-        # Retirar uma página da fila
-
-        # Realizar a requisição
-
-        # Baixar a página
-
-        # Extrair links
-
-        # Extrair info
-        #https://urllib3.readthedocs.io/en/stable/reference/urllib3.util.html#urllib3.util.parse_url
-        #https://urllib3.readthedocs.io/en/stable/reference/urllib3.util.html#urllib3.util.Url
-
-        # Colocar links extraídos na fila se der
     
+    def __getHostsAndResourcesFromWorkers(self):
+        workers = [worker for (_,worker) in self._workersQueues.items()]
+        for workerId, worker in enumerate(workers):
+            print(f"-----Worker:{workerId}-----")
+            print(worker.getCrawlingInfo())
+
     def _getCustomPoolManager(self):
         customRetries = urllib3.Retry(3, redirect=10)
         return urllib3.PoolManager(
