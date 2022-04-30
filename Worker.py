@@ -4,8 +4,14 @@ import utils
 from WorkersPipeline import WorkersPipeline
 import urllib3
 import certifi
+from threading import Lock, Condition
+import logging
 
 class Worker():
+
+    """
+    This is a worker that effectively crawls web pages
+    """
 
     MAXHOSTPRIORITY = 0
     
@@ -34,7 +40,7 @@ class Worker():
         self._totalPagesCrawled = 0
     
     @property
-    def id(self):
+    def id(self) -> int:
         return self._id
     
     @id.setter
@@ -82,7 +88,7 @@ class Worker():
         raise AttributeError("crawledLinksPerHost is not writable")
     
     @property
-    def totalPagesCrawled(self):
+    def totalPagesCrawled(self) -> int:
         return self._totalPagesCrawled
     
     @totalPagesCrawled.setter
@@ -102,7 +108,7 @@ class Worker():
         if host not in list(self._hostsResourses.keys()):
             self._hostsResourses[host] = deque()
     
-    def _alreadyCrawled(self, host, resource):
+    def _alreadyCrawled(self, host, resource) -> bool:
         if host in list(self._crawledLinksPerHost.keys()):
             if resource in self._crawledLinksPerHost[host]:
                 return True
@@ -122,7 +128,7 @@ class Worker():
             self._hostsOnQueue.add(host)
             self._hostsQueue.put((priority, host))
     
-    def getCrawlingInfo(self):
+    def getCrawlingInfo(self) -> str:
         hostsOnQueue = [host for host in self._hostsOnQueue]
         requestsMade = self._crawledLinksPerHost
         requestsToBeDone = self._hostsResourses
@@ -153,7 +159,41 @@ class Worker():
 
         #     if httpResponse.status == 200:
         #         print("Resposta 200")
-        print(f"Olá da Thread {self._id}")
+        logging.info(f"Olá da Thread {self._id}")
+
+        # finishedOperations = False
+        # while not finishedOperations:
+        #     while self._hasLinkToRequest():
+        #         #Request
+        #         pass
+                
+        #     self._tryToCompleteWithReceivedLinks()
+
+        #     #barreira
+        #     if not self._hasLinkToRequest():
+        #         #Espera alguém avisar que pode sair
+        #         #Avisar o Pipeline que estou esperando
+        #         pass
+
+        #     if not self._hasLinkToRequest():
+        #         finishedOperations = True
+
+    def _tryToCompleteWithReceivedLinks(self):
+        workerToWorkerLock = self._workersPipeline.getWorkerToWorkerLockOfWorker(self._id)
+        workerToWorkerLock.acquire()
+
+        linksWorkersSentToMe = self._workersPipeline.getWorkerToWorkerOfWorker(self._id)
+        if(len(linksWorkersSentToMe) > 0):
+            #Completar a minha Queue
+            while linksWorkersSentToMe:
+                newLink = linksWorkersSentToMe.popleft()
+                self.addLinkToRequest(newLink)
+
+        workerToWorkerLock.release()
+
+    
+    def _hasLinkToRequest(self) -> bool:
+        return not self._hostsQueue.empty()
         
 
     # def _getCustomPoolManager(self):

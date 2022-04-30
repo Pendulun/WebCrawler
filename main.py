@@ -1,6 +1,7 @@
 import sys
 from Crawler import Crawler
 import utils
+import logging
 
 class UndefinedCommandError(Exception):
     pass
@@ -61,6 +62,8 @@ def getConfigDictTemplate():
     return templateConfig
 
 if __name__ == "__main__":
+    
+    logging.basicConfig(level=logging.DEBUG, format='%(thread)d-%(threadName)s-%(levelname)s-%(message)s')
 
     MINNUMARGS = 5
 
@@ -76,11 +79,11 @@ if __name__ == "__main__":
         except ArgsWrongTypeError as e:
             utils.printErrorMessageAndExitWithErrorCode(e, 1)
         else:
-            print("Todos o comandos foram aceitos")
-            print(configs)
+            logging.info(f"Todos o comandos foram aceitos {configs}")
             NUMWORKERS = 4
             myCrawler = Crawler(configs['LIMIT'], NUMWORKERS)
             try:
                 myCrawler.startCrawlingFromSeedsFile(configs['seedPathFile'])
+                pass
             except FileNotFoundError as e:
                 utils.printErrorMessageAndExitWithErrorCode(e, 1)

@@ -4,9 +4,13 @@ import utils
 from Worker import Worker
 from WorkersPipeline import WorkersPipeline
 import threading
+import logging
     
 class Crawler():
-    def __init__(self, pagesCrawledLimit, numWorkers=1):
+    """
+    This is the crawler. It manages all workers to crawl pages until the limit is reached
+    """
+    def __init__(self, pagesCrawledLimit:int, numWorkers:int =1):
         
         self._workersQueues = {workerId:Worker(workerId) for workerId in range(numWorkers)}
         self._workersPipeline = WorkersPipeline(self._workersQueues)
@@ -63,16 +67,16 @@ class Crawler():
     def numWorkers(self, newNumWorkers):
         raise AttributeError("newNumWorkers is read-only")
 
-    def startCrawlingFromSeedsFile(self, seedsFilePath):
+    def startCrawlingFromSeedsFile(self, seedsFilePath: str):
         self.__distributeSeedsForWorkers(seedsFilePath)
         self.__crawlWorkers()
         self.__getHostsAndResourcesFromWorkers()
 
     
-    def __distributeSeedsForWorkers(self, seedsFilePath):
+    def __distributeSeedsForWorkers(self, seedsFilePath: str):
         
         with open(seedsFilePath, 'r') as seedsFile:
-            print("Abriu Arquivo")
+            logging.info("Abriu Arquivo")
             
             link = seedsFile.readline().rstrip('\n')
 
@@ -80,7 +84,7 @@ class Crawler():
                 self.__sendLinkForThread(link)
                 link = seedsFile.readline().rstrip('\n')
 
-    def __sendLinkForThread(self, newPageLink):
+    def __sendLinkForThread(self, newPageLink: str):
         
         threadOfHost = utils.threadOfHost(self._numWorkers, utils.getHostOfLink(newPageLink))
         self._workersQueues[threadOfHost].addLinkToRequest(newPageLink)
@@ -99,5 +103,4 @@ class Crawler():
     def __getHostsAndResourcesFromWorkers(self):
         workers = [worker for (_,worker) in self._workersQueues.items()]
         for workerId, worker in enumerate(workers):
-            print(f"-----Worker:{workerId}-----")
-            print(worker.getCrawlingInfo())
+            logging.info(f"\n-----Worker:{workerId}-----\n{worker.getCrawlingInfo()}")
