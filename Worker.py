@@ -17,6 +17,8 @@ class Worker():
     """
 
     MAXHOSTPRIORITY = 0
+    AGENTNAME = 'my-user-agent'
+    MAXNUMINNERSITEMAPSCRAWLABLE = 5
     
     def __init__(self, id):
         #Worker Id
@@ -35,7 +37,7 @@ class Worker():
         self._hostsAndSchemaToResourses = dict()
 
         #Robots policy for each host
-        self._hostsPolicy = dict()
+        self._hostsRobots = dict()
 
         #Set of crawled links per host
         self._crawledLinksPerHost = dict()
@@ -101,15 +103,12 @@ class Worker():
     def addLinkToRequest(self, newLink):
         hostWithSchema, resources = utils.getHostWithSchemaAndResourcesFromLink(newLink)
 
-        self._createHostResourcesQueueIfNotExists(hostWithSchema)
-        
         if not self._alreadyCrawled(hostWithSchema, resources):
+            self._createHostResourcesQueueIfNotExists(hostWithSchema)
             self._putResourceIntoResourcesQueueOfHost(hostWithSchema, resources)
-            self._addHostWithMaxPriorityToRequest(hostWithSchema)
-    
-    def _createHostResourcesQueueIfNotExists(self, host):
-        if host not in list(self._hostsAndSchemaToResourses.keys()):
-            self._hostsAndSchemaToResourses[host] = deque()
+
+            if hostWithSchema not in self._hostsOnQueue:
+                self._addHostWithMaxPriorityToRequest(hostWithSchema)
     
     def _alreadyCrawled(self, host, resource) -> bool:
         if host in list(self._crawledLinksPerHost.keys()):
@@ -119,6 +118,10 @@ class Worker():
                 return False
         else:
             return False
+        
+    def _createHostResourcesQueueIfNotExists(self, host):
+        if host not in list(self._hostsAndSchemaToResourses.keys()):
+            self._hostsAndSchemaToResourses[host] = deque()
     
     def _putResourceIntoResourcesQueueOfHost(self, host, resource):
         self._hostsAndSchemaToResourses[host].append(resource)
@@ -165,23 +168,47 @@ class Worker():
         logging.info(f"Hello from Thread {self._id}")
 
         finishedOperations = False
+        webAccess = self._getCustomPoolManager()
         while not finishedOperations:
             while self._hasLinkToRequest():
                 
-                nextHostWithSchema = self._getNextHostToRequest()
-                nextHostResource = self._getNextResourceToRequestOfHost(nextHostWithSchema)
-                completeLink = self._getLinkFrom(nextHostWithSchema, nextHostResource)
+                currHostWithSchema = self._getNextHostToRequest()
+                currHostResource = self._getNextResourceToRequestOfHost(currHostWithSchema)
+                completeLink = self._getLinkFrom(currHostWithSchema, currHostResource)
 
-                if not self._haveCachedRobotsForHost(nextHostWithSchema):
-                    self._findAndSaveRobotsOfHost(nextHostWithSchema)
-                    self._saveLinksFromSitemapOfRobots(self._hostsPolicy[nextHostWithSchema])
+                if not self._haveCachedRobotsForHost(currHostWithSchema):
+                    self._findAndSaveRobotsOfHost(currHostWithSchema)
+                    self._saveLinksFromSitemapOfRobots(self._hostsRobots[currHostWithSchema])
                 
-                hostRobots = self._hostsPolicy[nextHostWithSchema]
+                hostRobots = self._hostsRobots[currHostWithSchema]
                 
-                AGENTNAME = 'my-user-agent'
-                if hostRobots.allowed(completeLink, AGENTNAME):
+                if self._shouldAccessPage(completeLink, hostRobots):
                     #Request
-                    pass
+                    httpResponse = webAccess.request('GET', completeLink)
+                    logging.info(f"Fez requisição para: {completeLink}")
+
+                    if self._responseSuccess(httpResponse):
+                        #Parse text
+                        pageText = BeautifulSoup(httpResponse.text)
+                        urlsFound = self._getAllLinksInsideHtml(pageText)
+                        treatedUrls = self._formatUrls(urlsFound, currHostWithSchema)
+
+                        linksByWorker = self._separateLinksByWorker(treatedUrls)
+
+                        myLinks = linksByWorker[self._id]
+
+                        self.addAllLinksToRequest(myLinks)
+
+                        #Send other links to its proper workers
+
+                        #Store document
+
+                        #If host resources is not empty, add it again to the priorityQueue
+                        #with proper timestamp
+
+                        #Mark this page as already crawled
+                        pass
+                    
                 
             self._tryToCompleteWithReceivedLinks()
 
@@ -194,6 +221,48 @@ class Worker():
             if not self._hasLinkToRequest():
                 logging.info("Terminou Operações")
                 finishedOperations = True
+    
+    def _separateLinksByWorker(self, urls:set) -> dict:
+        linkByHost = dict()
+
+        for workerId in range(self._workersPipeline.numWorkers):
+            linkByHost[workerId] = list()
+
+        for url in urls:
+            hostWithSchema = utils.getHostWithSchemaOfLink(url)
+            workerId = utils.threadOfHost(self._workersPipeline.numWorkers, hostWithSchema)
+
+            linkByHost[workerId] = url
+        
+        return linkByHost
+
+    
+    def _formatUrls(self, urlsFound:set, currHostWithSchema:str) -> set:
+        formatedUrls = set()
+
+        for url in urlsFound:
+            if url[0] != "#":
+                formatedUrl = ""
+
+                if url[0] == "/":
+                    formatedUrl = f"{currHostWithSchema}{url}"
+                elif (len(url) >= 4 and url[:4] == "http") or (len(url) >= 5 and url[:5] == "https"):
+                    formatedUrl = url
+
+                if(formatedUrl != ""):
+                    formatedUrls.add(formatedUrl)
+        
+        return formatedUrls
+
+    def _getAllLinksInsideHtml(self, pageText:BeautifulSoup) -> set:
+        #Find all links
+        allAnchorsFound = pageText.find_all("a")
+
+        urlsFound = set()
+        for anchorTag in allAnchorsFound:
+            urlsFound.add(anchorTag.get("href"))
+        
+        return urlsFound
 
     def _hasLinkToRequest(self) -> bool:
         return not self._hostsQueue.empty()
@@ -209,16 +278,16 @@ class Worker():
         return link
 
     def _haveCachedRobotsForHost(self, host):
-        return host in list(self._hostsPolicy.keys())
+        return host in list(self._hostsRobots.keys())
     
     def _findAndSaveRobotsOfHost(self, hostWithSchema):
         hostRobotsPath = Robots.robots_url(hostWithSchema)
         try:
             hostRobots = Robots.fetch(hostRobotsPath)
         except:
-            self._hostsPolicy[hostWithSchema] = None
+            self._hostsRobots[hostWithSchema] = None
         else:
-            self._hostsPolicy[hostWithSchema] = hostRobots
+            self._hostsRobots[hostWithSchema] = hostRobots
     
     def _saveLinksFromSitemapOfRobots(self, hostRobots:Robots):
 
@@ -259,9 +328,8 @@ class Worker():
             for innerSitemap in sitemapTags:
                 otherSitemaps.append(innerSitemap.findNext("loc").text)
 
-            MAXNUMSITEMAPSCRAWLABLE = 5
-            if len(otherSitemaps) > MAXNUMSITEMAPSCRAWLABLE:
-                otherSitemaps = otherSitemaps[:MAXNUMSITEMAPSCRAWLABLE]
+            if len(otherSitemaps) > Worker.MAXNUMINNERSITEMAPSCRAWLABLE:
+                otherSitemaps = otherSitemaps[:Worker.MAXNUMINNERSITEMAPSCRAWLABLE]
                      
             linkToPagesFound.extend(self._findLinksOnSitemaps(otherSitemaps))
         
@@ -303,10 +371,35 @@ class Worker():
 
         workerToWorkerLock.release()
     
-    # def _getCustomPoolManager(self):
-    #     customRetries = urllib3.Retry(3, redirect=10)
-    #     return urllib3.PoolManager(
-    #                                 retries=customRetries,
-    #                                 cert_reqs='CERT_REQUIRED',
-    #                                 ca_certs=certifi.where()
-    #                             )
+    def _getCustomPoolManager(self):
+        customRetries = urllib3.Retry(3, redirect=10)
+        return urllib3.PoolManager(
+                                    retries=customRetries,
+                                    cert_reqs='CERT_REQUIRED',
+                                    ca_certs=certifi.where()
+                                )
+    
+    def _shouldAccessPage(self, completeLink, hostRobots):
+
+        allowed = hostRobots.allowed(completeLink, Worker.AGENTNAME)
+
+        passHeuristics = UnwantedPagesHeuristics.passHeuristicsAccess(completeLink)
+
+        return allowed and passHeuristics
+    
+    def _responseSuccess(self, httpResponse):
+        return str(httpResponse.status)[0] == "2"
+
+class UnwantedPagesHeuristics():
+    UNWANTEDDOCTYPESTHREECHARS = set(["pdf", "csv", "png", "svg", "jpg", "gif", "raw","cr2",
+                                        "nef", "orf", "sr2", "bmp", "tif"])
+    
+    UNWANTEDDOCTYPESFOURCHARS = set(["tiff", "jpeg"])
+
+    @staticmethod
+    def passHeuristicsAccess(url:str) -> bool:
+        passThreeChars = url[-3:] not in UnwantedPagesHeuristics.UNWANTEDDOCTYPESTHREECHARS
+        passFourChars = url[-4:] not in UnwantedPagesHeuristics.UNWANTEDDOCTYPESFOURCHARS
+
+        return all([passThreeChars, passFourChars])
+
