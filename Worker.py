@@ -10,6 +10,19 @@ from reppy import Robots
 from bs4 import BeautifulSoup
 import requests
 
+class UnwantedPagesHeuristics():
+    UNWANTEDDOCTYPESTHREECHARS = set(["pdf", "csv", "png", "svg", "jpg", "gif", "raw","cr2",
+                                        "nef", "orf", "sr2", "bmp", "tif"])
+    
+    UNWANTEDDOCTYPESFOURCHARS = set(["tiff", "jpeg"])
+
+    @staticmethod
+    def passHeuristicsAccess(url:str) -> bool:
+        passThreeChars = url[-3:] not in UnwantedPagesHeuristics.UNWANTEDDOCTYPESTHREECHARS
+        passFourChars = url[-4:] not in UnwantedPagesHeuristics.UNWANTEDDOCTYPESFOURCHARS
+
+        return all([passThreeChars, passFourChars])
+
 class Worker():
 
     """
@@ -176,32 +189,28 @@ class Worker():
                 currHostResource = self._getNextResourceToRequestOfHost(currHostWithSchema)
                 completeLink = self._getLinkFrom(currHostWithSchema, currHostResource)
 
-                if not self._haveCachedRobotsForHost(currHostWithSchema):
-                    self._findAndSaveRobotsOfHost(currHostWithSchema)
-                    self._saveLinksFromSitemapOfRobots(self._hostsRobots[currHostWithSchema])
+                self._requestForRobotsOfHostIfNecessary(currHostWithSchema)
                 
-                hostRobots = self._hostsRobots[currHostWithSchema]
+                hostRobots = self._getRobotsOfHost(currHostWithSchema)
                 
                 if self._shouldAccessPage(completeLink, hostRobots):
-                    #Request
+
                     httpResponse = webAccess.request('GET', completeLink)
                     logging.info(f"Fez requisição para: {completeLink}")
 
                     if self._responseSuccess(httpResponse):
-                        #Parse text
+
                         pageText = BeautifulSoup(httpResponse.text)
                         urlsFound = self._getAllLinksInsideHtml(pageText)
                         treatedUrls = self._formatUrls(urlsFound, currHostWithSchema)
 
                         linksByWorker = self._separateLinksByWorker(treatedUrls)
-
+                        
                         myLinks = linksByWorker[self._id]
-
                         self.addAllLinksToRequest(myLinks)
 
-                        #Send other links to its proper workers
-
-                        #Store document
+                        linksByWorker.pop(self._id, None)
+                        self._sendLinksToProperWorkers(linksByWorker)
 
                         #If host resources is not empty, add it again to the priorityQueue
                         #with proper timestamp
@@ -221,6 +230,19 @@ class Worker():
             if not self._hasLinkToRequest():
                 logging.info("Terminou Operações")
                 finishedOperations = True
+
+    def _getRobotsOfHost(self, host):
+        return self._hostsRobots[host]
+    
+    def _sendLinksToProperWorkers(self, linksByWorker:dict):
+        for workerId, linksToSend in linksByWorker.items():
+            logging.info(f"Thread {self._id} enviando para Thread {workerId}")
+            self._workersPipeline.sendLinksToWorker(linksToSend, workerId)
+
+    def _requestForRobotsOfHostIfNecessary(self, hostWithSchema:str):
+        if not self._haveCachedRobotsForHost(hostWithSchema):
+            self._findAndSaveRobotsOfHost(hostWithSchema)
+            self._saveLinksFromSitemapOfRobots(self._hostsRobots[hostWithSchema])
     
     def _separateLinksByWorker(self, urls:set) -> dict:
         linkByHost = dict()
@@ -389,17 +411,3 @@ class Worker():
     
     def _responseSuccess(self, httpResponse):
         return str(httpResponse.status)[0] == "2"
-
-class UnwantedPagesHeuristics():
-    UNWANTEDDOCTYPESTHREECHARS = set(["pdf", "csv", "png", "svg", "jpg", "gif", "raw","cr2",
-                                        "nef", "orf", "sr2", "bmp", "tif"])
-    
-    UNWANTEDDOCTYPESFOURCHARS = set(["tiff", "jpeg"])
-
-    @staticmethod
-    def passHeuristicsAccess(url:str) -> bool:
-        passThreeChars = url[-3:] not in UnwantedPagesHeuristics.UNWANTEDDOCTYPESTHREECHARS
-        passFourChars = url[-4:] not in UnwantedPagesHeuristics.UNWANTEDDOCTYPESFOURCHARS
-
-        return all([passThreeChars, passFourChars])
-

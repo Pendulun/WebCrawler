@@ -90,27 +90,52 @@ class WorkersPipeline():
             hostWithSchema, resource = utils.getHostWithSchemaAndResourcesFromLink(link)
             
             if hostWithSchema not in list(hostsToLinksMap.keys()):
-                hostsToLinksMap[hostWithSchema] = []
+                hostsToLinksMap[hostWithSchema] = set()
             
             hostsToLinksMap[hostWithSchema] = resource
         return hostsToLinksMap
     
     def _mapResoursesToWorkers(self, hostsWithSchemaToLinksMap: dict) -> dict:
         hostsAndResourcesToWorkerMap = dict()
+
+        for workerId in range(self._numWorkers):
+            hostsAndResourcesToWorkerMap[workerId] = list()
+        
         for hostWithSchema, resources in hostsWithSchemaToLinksMap.items():
             workerId = utils.threadOfHost(self._numWorkers, hostWithSchema)
-
-            if workerId not in list(hostsAndResourcesToWorkerMap.keys()):
-                hostsAndResourcesToWorkerMap[workerId] = []
             
-            hostsAndResourcesToWorkerMap[workerId].append((hostWithSchema, resources))
+            hostsAndResourcesToWorkerMap = self._addHostAndResourcesToWorkerQueue(  hostsAndResourcesToWorkerMap,
+                                                                                    workerId, hostWithSchema, 
+                                                                                    resources
+                                                                                    )
+
+        return hostsAndResourcesToWorkerMap
+
+    def _addHostAndResourcesToWorkerQueue(self, hostsAndResourcesToWorkerMap:dict, workerId:int, hostWithSchema:str, resources:list):
+        hostsAndResourcesToWorkerMap[workerId].append((hostWithSchema, resources))
         return hostsAndResourcesToWorkerMap
     
     def _sendResourcesToWorkers(self, hostsAndResourcesToWorkerMap:dict):
         for workerId, mappedLinks in hostsAndResourcesToWorkerMap.items():
-            workerLock = self._workerToWorkerLock[workerId]
+            if len(mappedLinks) > 0:
+                workerLock = self._workerToWorkerLock[workerId]
 
-            workerLock.acquire()
-            workerLinkDeque = self._workerToWorkerLink[workerId]
-            workerLinkDeque.append(mappedLinks)
-            workerLock.release()
+                workerLock.acquire()
+                logging.info(f"Worker Pipeline colocando elementos na fila do Worker {workerId}")
+                workerLinkDeque = self._workerToWorkerLink[workerId]
+                for link in mappedLinks:
+                    workerLinkDeque.append(link)
+                workerLock.release()
+    
+    def sendLinksToWorker(self, links:list, workerId:int):
+        hostsWithSchemaToLinksMap = self._mapLinkResoursesToHosts(links)
+
+        hostsAndResourcesToWorkerMap = dict()
+        hostsAndResourcesToWorkerMap[workerId] = list()
+        for hostWithSchema, resources in hostsWithSchemaToLinksMap.items():
+            hostsAndResourcesToWorkerMap = self._addHostAndResourcesToWorkerQueue(  hostsAndResourcesToWorkerMap,
+                                                                                    workerId, hostWithSchema,
+                                                                                    resources
+                                                                                    )
+
+        self._sendResourcesToWorkers(hostsAndResourcesToWorkerMap)
