@@ -84,6 +84,5 @@ if __name__ == "__main__":
             myCrawler = Crawler(configs['LIMIT'], NUMWORKERS)
             try:
                 myCrawler.startCrawlingFromSeedsFile(configs['seedPathFile'])
-                pass
             except FileNotFoundError as e:
                 utils.printErrorMessageAndExitWithErrorCode(e, 1)
