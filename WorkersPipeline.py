@@ -78,32 +78,32 @@ class WorkersPipeline():
     
     def addLinksToProperWorkers(self, linkList:list):
         
-        hostsToLinksMap = self._mapLinkResoursesToHosts(linkList)
+        hostsWithSchemaToLinksMap = self._mapLinkResoursesToHosts(linkList)
         
-        hostsAndResourcesToWorkerMap = self._mapResoursesToWorkers(hostsToLinksMap)
+        hostsAndResourcesToWorkerMap = self._mapResoursesToWorkers(hostsWithSchemaToLinksMap)
 
         self._sendResourcesToWorkers(hostsAndResourcesToWorkerMap)
 
     def _mapLinkResoursesToHosts(self, linkList:list) -> dict:
         hostsToLinksMap = dict()
         for link in linkList:
-            host, resource = utils.getHostAndResourcesFromLink(link)
+            hostWithSchema, resource = utils.getHostWithSchemaAndResourcesFromLink(link)
             
-            if host not in list(hostsToLinksMap.keys()):
-                hostsToLinksMap[host] = []
+            if hostWithSchema not in list(hostsToLinksMap.keys()):
+                hostsToLinksMap[hostWithSchema] = []
             
-            hostsToLinksMap[host] = resource
+            hostsToLinksMap[hostWithSchema] = resource
         return hostsToLinksMap
     
-    def _mapResoursesToWorkers(self, hostsToLinksMap: dict) -> dict:
+    def _mapResoursesToWorkers(self, hostsWithSchemaToLinksMap: dict) -> dict:
         hostsAndResourcesToWorkerMap = dict()
-        for host, resources in hostsToLinksMap.items():
-            workerId = utils.threadOfHost(self._numWorkers, host)
+        for hostWithSchema, resources in hostsWithSchemaToLinksMap.items():
+            workerId = utils.threadOfHost(self._numWorkers, hostWithSchema)
 
             if workerId not in list(hostsAndResourcesToWorkerMap.keys()):
                 hostsAndResourcesToWorkerMap[workerId] = []
             
-            hostsAndResourcesToWorkerMap[workerId].append((host, resources))
+            hostsAndResourcesToWorkerMap[workerId].append((hostWithSchema, resources))
         return hostsAndResourcesToWorkerMap
     
     def _sendResourcesToWorkers(self, hostsAndResourcesToWorkerMap:dict):

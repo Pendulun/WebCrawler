@@ -12,12 +12,22 @@ def getHostAndResourcesFromLink(link:str):
     resources = getResourcesFromLink(link)
     return host, resources
 
+def getHostWithSchemaAndResourcesFromLink(link:str):
+    hostWithSchema = getHostWithSchemaOfLink(link)
+    resources = getResourcesFromLink(link)
+    return hostWithSchema, resources
+
 def getHostOfLink(link:str) -> str:
     """
     Assumes the link is in the format:
     https://host/resources
     """
     return link.split("/")[2]
+
+def getHostWithSchemaOfLink(link:str) -> str:
+    schemaAndHostParts = link.split("/")[:3]
+    schemaAndHost = f"{schemaAndHostParts[0]}//{schemaAndHostParts[2]}"
+    return schemaAndHost
 
 def getResourcesFromLink(link: str) -> str:
     return f"/{'/'.join(link.split('/')[3:])}"

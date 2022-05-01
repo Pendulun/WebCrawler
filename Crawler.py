@@ -86,7 +86,7 @@ class Crawler():
 
     def __sendLinkForThread(self, newPageLink: str):
         
-        threadOfHost = utils.threadOfHost(self._numWorkers, utils.getHostOfLink(newPageLink))
+        threadOfHost = utils.threadOfHost(self._numWorkers, utils.getHostWithSchemaOfLink(newPageLink))
         self._workersQueues[threadOfHost].addLinkToRequest(newPageLink)
 
     def __crawlWorkers(self):
