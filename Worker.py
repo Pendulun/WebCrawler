@@ -1,13 +1,13 @@
-from queue import PriorityQueue
-from collections import deque
-import utils
+from threading import Lock, Condition
 from WorkersPipeline import WorkersPipeline
+from queue import PriorityQueue
+from bs4 import BeautifulSoup
+from collections import deque
+from reppy import Robots
+import utils
 import urllib3
 import certifi
-from threading import Lock, Condition
 import logging
-from reppy import Robots
-from bs4 import BeautifulSoup
 import requests
 
 class UnwantedPagesHeuristics():
