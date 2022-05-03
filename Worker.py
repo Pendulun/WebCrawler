@@ -46,13 +46,7 @@ class Worker():
         self._hostsOnQueue = set()
 
         #All hosts discovered with their policies
-        #REFATORAR PARA SUA PRÓPRIA CLASSE
         self._hostsInfo = Host.HostsInfo()
-
-        #Set of crawled links per host
-        self._crawledLinksPerHost = dict()
-
-        self._totalPagesCrawled = 0
     
     @property
     def id(self) -> int:
@@ -87,24 +81,8 @@ class Worker():
         raise AttributeError("hostsQueue is not writable")
     
     @property
-    def hostsResourses(self):
-        raise AttributeError("hostsResourses is not readable")
-    
-    @hostsResourses.setter
-    def hostsResourses(self, newHostsResourses):
-        raise AttributeError("hostsResourses is not writable")
-    
-    @property
-    def crawledLinksPerHost(self):
-        raise AttributeError("crawledLinksPerHost is not readable")
-    
-    @crawledLinksPerHost.setter
-    def crawledLinksPerHost(self, newCrawledLinksPerHost):
-        raise AttributeError("crawledLinksPerHost is not writable")
-    
-    @property
     def totalPagesCrawled(self) -> int:
-        return self._totalPagesCrawled
+        return self._hostsInfo.getTotalNumCrawledResources()
     
     @totalPagesCrawled.setter
     def totalPagesCrawled(self, newTotalPagesCrawled):
@@ -114,24 +92,16 @@ class Worker():
         for link in links:
             self.addLinkToRequest(link)
 
-    def addLinkToRequest(self, newLink):
+    def addLinkToRequest(self, newLink:str):
         hostWithSchema, resources = utils.getHostWithSchemaAndResourcesFromLink(newLink)
 
-        if not self._alreadyCrawled(hostWithSchema, resources):
+        
+        if not self._hostsInfo.alreadyCrawled(hostWithSchema, resources):
             self._hostsInfo.createInfoForHostIfNotExists(hostWithSchema)
             self._putResourceIntoResourcesQueueOfHost(hostWithSchema, resources)
 
             if hostWithSchema not in self._hostsOnQueue:
                 self._addHostWithMaxPriorityToRequest(hostWithSchema)
-    
-    def _alreadyCrawled(self, host, resource) -> bool:
-        if host in list(self._crawledLinksPerHost.keys()):
-            if resource in self._crawledLinksPerHost[host]:
-                return True
-            else:
-                return False
-        else:
-            return False
     
     def _putResourceIntoResourcesQueueOfHost(self, host:str, resource:str):
         hostInfo = self._hostsInfo.getHostInfo(host)
@@ -147,7 +117,7 @@ class Worker():
     
     def getCrawlingInfo(self) -> str:
         hostsOnQueue = [host for host in self._hostsOnQueue]
-        requestsMade = self._crawledLinksPerHost
+        requestsMade = self._hostsInfo.getCrawledResourcesPerHost()
         requestsToBeDone = str(self._hostsInfo)
 
         return f"Hosts on Queue:\n{hostsOnQueue}\nRequests to be Done:\n{requestsToBeDone}\nRequests Made:\n{requestsMade}"

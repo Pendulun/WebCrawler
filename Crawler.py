@@ -70,7 +70,7 @@ class Crawler():
     def startCrawlingFromSeedsFile(self, seedsFilePath: str):
         self.__distributeSeedsForWorkers(seedsFilePath)
         self.__crawlWorkers()
-        self.__getHostsAndResourcesFromWorkers()
+        # self.__getHostsAndResourcesFromWorkers()
 
     
     def __distributeSeedsForWorkers(self, seedsFilePath: str):

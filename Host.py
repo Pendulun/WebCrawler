@@ -14,6 +14,7 @@ class HostInfo():
         self._robots = None
         self._couldNotAccessRobots = False
         self._hostNameWithSchema = hostWithSchema
+        self._crawledResources = set()
     
     @property
     def hostNameWithSchema(self):
@@ -22,6 +23,14 @@ class HostInfo():
     @hostNameWithSchema.setter
     def hostNameWithSchema(self, newHostName):
         raise AttributeError("hostNameWithSchema is not directly writable")
+    
+    @property
+    def crawledResources(self):
+        raise AttributeError("crawledResources is not directly readable")
+    
+    @crawledResources.setter
+    def crawledResources(self, newCrawledResources):
+        raise AttributeError("crawledResources is not directly writable")
     
     @property
     def couldNotAccessRobots(self):
@@ -54,7 +63,10 @@ class HostInfo():
         self._resourcesQueue.extend(newResources)
     
     def getNextResource(self) -> str:
-        return self._resourcesQueue.popleft()
+        if not self.emptyOfResources():
+            return self._resourcesQueue.popleft()
+        else:
+            return None
     
     def emptyOfResources(self) -> bool:
         return len(self._resourcesQueue) == 0
@@ -174,6 +186,21 @@ class HostInfo():
 
     def getRequestsString(self) -> str:
         return str(self._resourcesQueue)
+    
+    def markResourceAsCrawled(self, resource:str):
+        self._crawledResources.add(resource)
+    
+    def dismarkResourceAsCrawled(self, resource:str):
+        self._crawledResources.discard(resource)
+    
+    def alreadyCrawledResource(self, resource: str) -> bool:
+        return resource in self._crawledResources
+    
+    def getCrawledResourcesString(self):
+        return str(self._crawledResources)
+    
+    def getCrawledResourcesNum(self):
+        return len(self._crawledResources)
 
 class HostsInfo():
     def __init__ (self):
@@ -198,6 +225,29 @@ class HostsInfo():
     def createInfoForHostIfNotExists(self, host):
         if not self.hostExists(host):
             self._hosts[host] = HostInfo(host)
+    
+    def getCrawledResourcesPerHost(self) -> str:
+        crawled = ""
+
+        for host, hostInfo in self._hosts.items():
+            crawled+=f"({host}):{hostInfo.getCrawledResourcesString()} "
+        
+        return crawled
+    
+    def alreadyCrawled(self, host:str, resource:str) -> bool:
+        if self.hostExists(host):
+            return self.getHostInfo(host).alreadyCrawledResource(resource)
+        else:
+            return False
+    
+    def getTotalNumCrawledResources(self):
+        total = 0
+
+        for _, hostInfo in self._hosts.items():
+
+            total+=hostInfo.getCrawledResourcesNum()
+        
+        return total
     
     def __str__(self) -> str:
         myStringRep = "HostsInfo(\n"
