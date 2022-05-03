@@ -99,6 +99,8 @@ class Crawler():
             newThread.start()
 
         [thread.join() for thread in workersThreads]
+
+        #Pegar estatísticas
     
     def __getHostsAndResourcesFromWorkers(self):
         workers = [worker for (_,worker) in self._workersQueues.items()]

@@ -47,7 +47,7 @@ class Worker():
 
         #All hosts discovered with their policies
         #REFATORAR PARA SUA PRÓPRIA CLASSE
-        self._hostsInfo = dict()
+        self._hostsInfo = Host.HostsInfo()
 
         #Set of crawled links per host
         self._crawledLinksPerHost = dict()
@@ -118,7 +118,7 @@ class Worker():
         hostWithSchema, resources = utils.getHostWithSchemaAndResourcesFromLink(newLink)
 
         if not self._alreadyCrawled(hostWithSchema, resources):
-            self._createHostResourcesQueueIfNotExists(hostWithSchema)
+            self._hostsInfo.createInfoForHostIfNotExists(hostWithSchema)
             self._putResourceIntoResourcesQueueOfHost(hostWithSchema, resources)
 
             if hostWithSchema not in self._hostsOnQueue:
@@ -132,13 +132,9 @@ class Worker():
                 return False
         else:
             return False
-        
-    def _createHostResourcesQueueIfNotExists(self, host):
-        if host not in list(self._hostsInfo.keys()):
-            self._hostsInfo[host] = Host.HostInfo(host)
     
     def _putResourceIntoResourcesQueueOfHost(self, host:str, resource:str):
-        hostInfo = self._hostsInfo[host]
+        hostInfo = self._hostsInfo.getHostInfo(host)
         hostInfo.addResource(resource)
     
     def _addHostWithMaxPriorityToRequest(self, host:str):
@@ -152,10 +148,7 @@ class Worker():
     def getCrawlingInfo(self) -> str:
         hostsOnQueue = [host for host in self._hostsOnQueue]
         requestsMade = self._crawledLinksPerHost
-        requestsToBeDone = ""
-
-        for hostName, hostInfo in self._hostsInfo.items():
-            requestsToBeDone+=f"({hostName}) : {hostInfo.getRequestsString()}\n"
+        requestsToBeDone = str(self._hostsInfo)
 
         return f"Hosts on Queue:\n{hostsOnQueue}\nRequests to be Done:\n{requestsToBeDone}\nRequests Made:\n{requestsMade}"
 
@@ -194,7 +187,7 @@ class Worker():
                 currHostResource = self._getNextResourceToRequestOfHost(currHostWithSchema)
                 completeLink = self._getLinkFrom(currHostWithSchema, currHostResource)
                 
-                hostInfo = self._hostsInfo[currHostWithSchema]
+                hostInfo = self._hostsInfo.getHostInfo(currHostWithSchema)
 
                 self._requestForRobotsOfHostIfNecessary(hostInfo)
                 
@@ -295,7 +288,7 @@ class Worker():
         return self._hostsQueue.get()
     
     def _getNextResourceToRequestOfHost(self, host:str) -> str:
-        hostInfo = self._hostsInfo[host]
+        hostInfo = self._hostsInfo.getHostInfo(host)
         return hostInfo.getNextResource()
     
     def _getLinkFrom(self, nextHost:str, nextHostResource:str) -> str:

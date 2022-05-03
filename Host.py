@@ -174,3 +174,36 @@ class HostInfo():
 
     def getRequestsString(self) -> str:
         return str(self._resourcesQueue)
+
+class HostsInfo():
+    def __init__ (self):
+        self._hosts = dict()
+    
+    @property
+    def hosts(self):
+        raise AttributeError("hosts is not readable")
+    
+    @hosts.setter
+    def hosts(self, newHosts):
+        raise AttributeError("hosts is not writable")
+    
+    def hostExists(self, host:str) -> bool:
+        return host in list(self._hosts.keys())
+    
+    def getHostInfo(self, host:str) -> HostInfo:
+        if self.hostExists(host):
+            return self._hosts[host]
+        return None
+    
+    def createInfoForHostIfNotExists(self, host):
+        if not self.hostExists(host):
+            self._hosts[host] = HostInfo(host)
+    
+    def __str__(self) -> str:
+        myStringRep = "HostsInfo(\n"
+
+        for hostName, hostInfo in self._hosts.items():
+            myStringRep+=f"({hostName}) : {hostInfo.getRequestsString()}\n"
+        
+        myStringRep+=")"
+        return  myStringRep
