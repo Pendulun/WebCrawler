@@ -9,6 +9,7 @@ import urllib3
 import certifi
 import logging
 import requests
+import Host
 
 class UnwantedPagesHeuristics():
     UNWANTEDDOCTYPESTHREECHARS = set(["pdf", "csv", "png", "svg", "jpg", "gif", "raw","cr2",
@@ -29,9 +30,7 @@ class Worker():
     This is a worker that effectively crawls web pages
     """
 
-    MAXHOSTPRIORITY = 0
-    AGENTNAME = 'my-user-agent'
-    MAXNUMINNERSITEMAPSCRAWLABLE = 5
+    MAXPRIORITYFORHOST = 0
     
     def __init__(self, id):
         #Worker Id
@@ -46,11 +45,9 @@ class Worker():
         #Set of hosts currently on the _hostsQueue
         self._hostsOnQueue = set()
 
-        #Links to request from a host
-        self._hostsAndSchemaToResourses = dict()
-
-        #Robots policy for each host
-        self._hostsRobots = dict()
+        #All hosts discovered with their policies
+        #REFATORAR PARA SUA PRÓPRIA CLASSE
+        self._hostsInfo = dict()
 
         #Set of crawled links per host
         self._crawledLinksPerHost = dict()
@@ -64,6 +61,14 @@ class Worker():
     @id.setter
     def id(self, newId):
         raise AttributeError("id is not writable")
+    
+    @property
+    def hostsInfo(self) -> int:
+        raise AttributeError("hostsInfo is not writable")
+    
+    @hostsInfo.setter
+    def hostsInfo(self, newHostsInfo):
+        raise AttributeError("hostsInfo is not writable")
 
     @property
     def workersPipeline(self):
@@ -90,14 +95,6 @@ class Worker():
         raise AttributeError("hostsResourses is not writable")
     
     @property
-    def hostsPolicy(self):
-        raise AttributeError("hostsPolicy is not readable")
-    
-    @hostsPolicy.setter
-    def hostsPolicy(self, newHostsPolicy):
-        raise AttributeError("hostsPolicy is not writable")
-    
-    @property
     def crawledLinksPerHost(self):
         raise AttributeError("crawledLinksPerHost is not readable")
     
@@ -113,6 +110,10 @@ class Worker():
     def totalPagesCrawled(self, newTotalPagesCrawled):
         raise AttributeError("totalPagesCrawled is not writable")
     
+    def addAllLinksToRequest(self, links):
+        for link in links:
+            self.addLinkToRequest(link)
+
     def addLinkToRequest(self, newLink):
         hostWithSchema, resources = utils.getHostWithSchemaAndResourcesFromLink(newLink)
 
@@ -133,16 +134,17 @@ class Worker():
             return False
         
     def _createHostResourcesQueueIfNotExists(self, host):
-        if host not in list(self._hostsAndSchemaToResourses.keys()):
-            self._hostsAndSchemaToResourses[host] = deque()
+        if host not in list(self._hostsInfo.keys()):
+            self._hostsInfo[host] = Host.HostInfo(host)
     
-    def _putResourceIntoResourcesQueueOfHost(self, host, resource):
-        self._hostsAndSchemaToResourses[host].append(resource)
+    def _putResourceIntoResourcesQueueOfHost(self, host:str, resource:str):
+        hostInfo = self._hostsInfo[host]
+        hostInfo.addResource(resource)
     
-    def _addHostWithMaxPriorityToRequest(self, host):
-        self._addHostToRequest(host, Worker.MAXHOSTPRIORITY)
+    def _addHostWithMaxPriorityToRequest(self, host:str):
+        self._addHostToRequest(host, Worker.MAXPRIORITYFORHOST)
     
-    def _addHostToRequest(self, host, priority):
+    def _addHostToRequest(self, host:str, priority:int):
         if host not in self._hostsOnQueue:
             self._hostsOnQueue.add(host)
             self._hostsQueue.put((priority, host))
@@ -150,7 +152,10 @@ class Worker():
     def getCrawlingInfo(self) -> str:
         hostsOnQueue = [host for host in self._hostsOnQueue]
         requestsMade = self._crawledLinksPerHost
-        requestsToBeDone = self._hostsAndSchemaToResourses
+        requestsToBeDone = ""
+
+        for hostName, hostInfo in self._hostsInfo.items():
+            requestsToBeDone+=f"({hostName}) : {hostInfo.getRequestsString()}\n"
 
         return f"Hosts on Queue:\n{hostsOnQueue}\nRequests to be Done:\n{requestsToBeDone}\nRequests Made:\n{requestsMade}"
 
@@ -188,12 +193,12 @@ class Worker():
                 currHostWithSchema = self._getNextHostToRequest()
                 currHostResource = self._getNextResourceToRequestOfHost(currHostWithSchema)
                 completeLink = self._getLinkFrom(currHostWithSchema, currHostResource)
+                
+                hostInfo = self._hostsInfo[currHostWithSchema]
 
-                self._requestForRobotsOfHostIfNecessary(currHostWithSchema)
+                self._requestForRobotsOfHostIfNecessary(hostInfo)
                 
-                hostRobots = self._getRobotsOfHost(currHostWithSchema)
-                
-                if self._shouldAccessPage(completeLink, hostRobots):
+                if self._shouldAccessPage(completeLink, hostInfo):
 
                     httpResponse = webAccess.request('GET', completeLink)
                     logging.info(f"Fez requisição para: {completeLink}")
@@ -230,19 +235,16 @@ class Worker():
             if not self._hasLinkToRequest():
                 logging.info("Terminou Operações")
                 finishedOperations = True
-
-    def _getRobotsOfHost(self, host):
-        return self._hostsRobots[host]
     
     def _sendLinksToProperWorkers(self, linksByWorker:dict):
         for workerId, linksToSend in linksByWorker.items():
             logging.info(f"Thread {self._id} enviando para Thread {workerId}")
             self._workersPipeline.sendLinksToWorker(linksToSend, workerId)
 
-    def _requestForRobotsOfHostIfNecessary(self, hostWithSchema:str):
-        if not self._haveCachedRobotsForHost(hostWithSchema):
-            self._findAndSaveRobotsOfHost(hostWithSchema)
-            self._saveLinksFromSitemapOfRobots(self._hostsRobots[hostWithSchema])
+    def _requestForRobotsOfHostIfNecessary(self, hostInfo:Host.HostInfo):
+        if not hostInfo.hasRobots():
+            hostInfo.tryFirstAccessToRobots()
+            hostInfo.saveLinksFromSitemapIfPossible()
     
     def _separateLinksByWorker(self, urls:set) -> dict:
         linkByHost = dict()
@@ -293,92 +295,12 @@ class Worker():
         return self._hostsQueue.get()
     
     def _getNextResourceToRequestOfHost(self, host:str) -> str:
-        return self._hostsAndSchemaToResourses[host].popleft()
+        hostInfo = self._hostsInfo[host]
+        return hostInfo.getNextResource()
     
     def _getLinkFrom(self, nextHost:str, nextHostResource:str) -> str:
         link = f"{nextHost}/{nextHostResource}"
         return link
-
-    def _haveCachedRobotsForHost(self, host):
-        return host in list(self._hostsRobots.keys())
-    
-    def _findAndSaveRobotsOfHost(self, hostWithSchema):
-        hostRobotsPath = Robots.robots_url(hostWithSchema)
-        try:
-            hostRobots = Robots.fetch(hostRobotsPath)
-        except:
-            self._hostsRobots[hostWithSchema] = None
-        else:
-            self._hostsRobots[hostWithSchema] = hostRobots
-    
-    def _saveLinksFromSitemapOfRobots(self, hostRobots:Robots):
-
-        if hostRobots is not None:
-            sitemapListOnRobots = hostRobots.sitemaps
-            if len(sitemapListOnRobots) > 0:
-                
-                firstSitemap = sitemapListOnRobots[0]
-                allLinksFound = self._findMaxLinksPossible(firstSitemap)
-
-                self.addAllLinksToRequest(allLinksFound)
-
-    def addAllLinksToRequest(self, links):
-        for link in links:
-            self.addLinkToRequest(link)
-
-    def _findMaxLinksPossible(self, sitemapLink:str) -> list:
-        sitemapPage = requests.get(sitemapLink)
-        sitemapXml = sitemapPage.text
-        sitemapSoup = BeautifulSoup(sitemapXml)
-
-        pagesInThisSitemap = self._findPagesOnSitemapSoup(sitemapSoup)
-        pagesInInnerSitemaps = self._findLinksFromInnerSitemaps(sitemapSoup)
-
-        allLinksFound = list() 
-        allLinksFound.extend(pagesInThisSitemap)
-        allLinksFound.extend(pagesInInnerSitemaps)
-
-        return allLinksFound
-            
-    def _findLinksFromInnerSitemaps(self, firstSitemapSoup) -> list:
-
-        linkToPagesFound = list()
-        sitemapTags = firstSitemapSoup.find_all("sitemap") 
-        if len(sitemapTags) > 0:
-            
-            otherSitemaps = list()    
-            for innerSitemap in sitemapTags:
-                otherSitemaps.append(innerSitemap.findNext("loc").text)
-
-            if len(otherSitemaps) > Worker.MAXNUMINNERSITEMAPSCRAWLABLE:
-                otherSitemaps = otherSitemaps[:Worker.MAXNUMINNERSITEMAPSCRAWLABLE]
-                     
-            linkToPagesFound.extend(self._findLinksOnSitemaps(otherSitemaps))
-        
-        return linkToPagesFound
-
-    def _findLinksOnSitemaps(self, sitemapsList:list) -> list:
-        linksFound = list()
-
-        for sitemapLink in sitemapsList:
-            sitemapPage = requests.get(sitemapLink)
-            sitemapXML = sitemapPage.text
-
-            sitemapSoup = BeautifulSoup(sitemapXML)
-            linksFound = self._findPagesOnSitemapSoup(sitemapSoup)
-            linksFound.extend(linksFound)
-        
-        return linksFound
-    
-    def _findPagesOnSitemapSoup(self, sitemapSoup):
-        linksToPagesFound = list()
-        pageLinksFound = sitemapSoup.find_all("url")
-
-        for page in pageLinksFound:
-            pageLink = page.findNext("loc").text
-            linksToPagesFound.append(pageLink)
-        
-        return linksToPagesFound
 
     def _tryToCompleteWithReceivedLinks(self):
         workerToWorkerLock = self._workersPipeline.getWorkerToWorkerLockOfWorker(self._id)
@@ -401,9 +323,9 @@ class Worker():
                                     ca_certs=certifi.where()
                                 )
     
-    def _shouldAccessPage(self, completeLink, hostRobots):
+    def _shouldAccessPage(self, completeLink:str, hostInfo:Host.HostInfo) -> bool:
 
-        allowed = hostRobots.allowed(completeLink, Worker.AGENTNAME)
+        allowed = hostInfo.canAccessPage(completeLink)
 
         passHeuristics = UnwantedPagesHeuristics.passHeuristicsAccess(completeLink)
 
