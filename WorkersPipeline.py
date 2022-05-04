@@ -122,3 +122,11 @@ class WorkersPipeline():
             linkByHost[workerId] = url
         
         return linkByHost
+    
+    def setWorkerWaiting(self, workerId:int):
+        #Checa se todos estão esperando
+        #Se sim, definir que acabou
+        pass
+
+    def unsetWorkerWaiting(self, workerId:int):
+        pass

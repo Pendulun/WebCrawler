@@ -150,8 +150,14 @@ class Worker():
 
             self._tryToCompleteWithReceivedLinks()
 
-            #Colocar uma barreira aqui
+            #Avisa que está esperando
+            #while not temLinksParaEle and not terminouTudo:
 
+            #   while(receivedLinksOrTerminated.wait() != 0):
+
+            #se not recebeuLinks, vai embora
+            # se recebeu, completaLinks e volta pro while
+            
             if self._hasLinkToRequest():
                 continue
             else:
