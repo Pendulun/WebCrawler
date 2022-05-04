@@ -1,15 +1,13 @@
 from threading import Lock, Condition
 from WorkersPipeline import WorkersPipeline
 from queue import PriorityQueue
-from bs4 import BeautifulSoup
-from collections import deque
 from reppy import Robots
 import utils
 import urllib3
 import certifi
 import logging
-import requests
 import Host
+import Parser
 
 class UnwantedPagesHeuristics():
     UNWANTEDDOCTYPESTHREECHARS = set(["pdf", "csv", "png", "svg", "jpg", "gif", "raw","cr2",
@@ -150,6 +148,8 @@ class Worker():
 
         finishedOperations = False
         webAccess = self._getCustomPoolManager()
+        htmlParser = Parser.HTMLParser()
+
         while not finishedOperations:
             while self._hasLinkToRequest():
                 
@@ -168,9 +168,10 @@ class Worker():
 
                     if self._responseSuccess(httpResponse):
 
-                        pageText = BeautifulSoup(httpResponse.text)
-                        urlsFound = self._getAllLinksInsideHtml(pageText)
-                        treatedUrls = self._formatUrls(urlsFound, currHostWithSchema)
+                        htmlParser.parse(httpResponse.text)
+                        urlsFound = htmlParser.getAllLinksFromParsedHTML()
+
+                        treatedUrls = htmlParser.formatUrlsWithHostIfNeeded(urlsFound, currHostWithSchema)
 
                         linksByWorker = self._workersPipeline.separateLinksByWorker(treatedUrls)
                         
@@ -209,33 +210,6 @@ class Worker():
             hostInfo.tryFirstAccessToRobots()
             #talvez desnecessário
             hostInfo.saveLinksFromSitemapIfPossible()
-    
-    def _formatUrls(self, urlsFound:set, currHostWithSchema:str) -> set:
-        formatedUrls = set()
-
-        for url in urlsFound:
-            if url[0] != "#":
-                formatedUrl = ""
-
-                if url[0] == "/":
-                    formatedUrl = f"{currHostWithSchema}{url}"
-                elif (len(url) >= 4 and url[:4] == "http") or (len(url) >= 5 and url[:5] == "https"):
-                    formatedUrl = url
-
-                if(formatedUrl != ""):
-                    formatedUrls.add(formatedUrl)
-        
-        return formatedUrls
-
-    def _getAllLinksInsideHtml(self, pageText:BeautifulSoup) -> set:
-        #Find all links
-        allAnchorsFound = pageText.find_all("a")
-
-        urlsFound = set()
-        for anchorTag in allAnchorsFound:
-            urlsFound.add(anchorTag.get("href"))
-        
-        return urlsFound
 
     def _hasLinkToRequest(self) -> bool:
         return not self._hostsQueue.empty()
