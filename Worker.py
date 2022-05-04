@@ -31,6 +31,7 @@ class Worker():
     """
 
     MAXPRIORITYFORHOST = 0
+    REQ_HEADERS = {'User-Agent': "Mozilla/5.0 (platform; rv:geckoversion) Gecko/geckotrail Firefox/firefoxversion"}
     
     def __init__(self, id):
         #Worker Id
@@ -95,7 +96,6 @@ class Worker():
     def addLinkToRequest(self, newLink:str):
         hostWithSchema, resources = utils.getHostWithSchemaAndResourcesFromLink(newLink)
 
-        
         if not self._hostsInfo.alreadyCrawled(hostWithSchema, resources):
             self._hostsInfo.createInfoForHostIfNotExists(hostWithSchema)
             self._putResourceIntoResourcesQueueOfHost(hostWithSchema, resources)
@@ -163,7 +163,7 @@ class Worker():
                 
                 if self._shouldAccessPage(completeLink, hostInfo):
 
-                    httpResponse = webAccess.request('GET', completeLink)
+                    httpResponse = webAccess.request('GET', completeLink, headers=Worker.REQ_HEADERS)
                     logging.info(f"Fez requisição para: {completeLink}")
 
                     if self._responseSuccess(httpResponse):
@@ -172,7 +172,7 @@ class Worker():
                         urlsFound = self._getAllLinksInsideHtml(pageText)
                         treatedUrls = self._formatUrls(urlsFound, currHostWithSchema)
 
-                        linksByWorker = self._separateLinksByWorker(treatedUrls)
+                        linksByWorker = self._workersPipeline.separateLinksByWorker(treatedUrls)
                         
                         myLinks = linksByWorker[self._id]
                         self.addAllLinksToRequest(myLinks)
@@ -207,22 +207,8 @@ class Worker():
     def _requestForRobotsOfHostIfNecessary(self, hostInfo:Host.HostInfo):
         if not hostInfo.hasRobots():
             hostInfo.tryFirstAccessToRobots()
+            #talvez desnecessário
             hostInfo.saveLinksFromSitemapIfPossible()
-    
-    def _separateLinksByWorker(self, urls:set) -> dict:
-        linkByHost = dict()
-
-        for workerId in range(self._workersPipeline.numWorkers):
-            linkByHost[workerId] = list()
-
-        for url in urls:
-            hostWithSchema = utils.getHostWithSchemaOfLink(url)
-            workerId = utils.threadOfHost(self._workersPipeline.numWorkers, hostWithSchema)
-
-            linkByHost[workerId] = url
-        
-        return linkByHost
-
     
     def _formatUrls(self, urlsFound:set, currHostWithSchema:str) -> set:
         formatedUrls = set()

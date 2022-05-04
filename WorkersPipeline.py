@@ -139,3 +139,17 @@ class WorkersPipeline():
                                                                                     )
 
         self._sendResourcesToWorkers(hostsAndResourcesToWorkerMap)
+    
+    def separateLinksByWorker(self, urls:set) -> dict:
+        linkByHost = dict()
+
+        for workerId in range(self._numWorkers):
+            linkByHost[workerId] = list()
+
+        for url in urls:
+            hostWithSchema = utils.getHostWithSchemaOfLink(url)
+            workerId = utils.threadOfHost(self._numWorkers, hostWithSchema)
+
+            linkByHost[workerId] = url
+        
+        return linkByHost
