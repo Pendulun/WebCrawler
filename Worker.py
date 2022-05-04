@@ -1,13 +1,13 @@
 from threading import Lock, Condition
 from WorkersPipeline import WorkersPipeline
+from WebAccesser import WebAccesser
 from queue import PriorityQueue
 from reppy import Robots
-import utils
-import urllib3
-import certifi
-import logging
 import Host
 import Parser
+import utils
+import logging
+
 
 class UnwantedPagesHeuristics():
     UNWANTEDDOCTYPESTHREECHARS = set(["pdf", "csv", "png", "svg", "jpg", "gif", "raw","cr2",
@@ -68,7 +68,7 @@ class Worker():
         raise AttributeError("workersPipeline is not readable")
     
     @workersPipeline.setter
-    def workersPipeline(self, newWorkersPipeline):
+    def workersPipeline(self, newWorkersPipeline: WorkersPipeline):
         self._workersPipeline = newWorkersPipeline
 
     @property
@@ -112,62 +112,31 @@ class Worker():
         if host not in self._hostsOnQueue:
             self._hostsOnQueue.add(host)
             self._hostsQueue.put((priority, host))
-    
-    def getCrawlingInfo(self) -> str:
-        hostsOnQueue = [host for host in self._hostsOnQueue]
-        requestsMade = self._hostsInfo.getCrawledResourcesPerHost()
-        requestsToBeDone = str(self._hostsInfo)
-
-        return f"Hosts on Queue:\n{hostsOnQueue}\nRequests to be Done:\n{requestsToBeDone}\nRequests Made:\n{requestsMade}"
 
     def crawl(self):
-        # http = self._getCustomPoolManager()
-
-        # #Ver se vale a pena separar por host
-        # #https://urllib3.readthedocs.io/en/stable/advanced-usage.html#customizing-pool-behavior
-        # while not self.pagesQueue.empty():
-        #     currPageLink = self.pagesQueue.get()
-            
-        #     httpResponse = http.request('GET', currPageLink)
-        #     #httpResponse é do tipo urllib3.response.HTTPResponse
-        #     #https://urllib3.readthedocs.io/en/stable/reference/urllib3.response.html?highlight=HTTPResponse#urllib3.response.HTTPResponse
-
-
-        #     print(f"Fez requisição para: {currPageLink}")
-
-
-        #     #Talvez tratar quando a resposta for redirecionada
-        #     print(f"Recebeu resposta de: {httpResponse.geturl()}")
-
-        #     print(f"Response status: {httpResponse.status}")
-        #     print(httpResponse.data)
-
-        #     if httpResponse.status == 200:
-        #         print("Resposta 200")
         logging.info(f"Hello from Thread {self._id}")
 
-        finishedOperations = False
-        webAccess = self._getCustomPoolManager()
+        allWorkersFinished = False
         htmlParser = Parser.HTMLParser()
+        webAccess = WebAccesser()
 
-        while not finishedOperations:
+        while not allWorkersFinished:
             while self._hasLinkToRequest():
-                
-                currHostWithSchema = self._getNextHostToRequest()
-                currHostResource = self._getNextResourceToRequestOfHost(currHostWithSchema)
-                completeLink = self._getLinkFrom(currHostWithSchema, currHostResource)
-                
+
+                completeLink = self._getNextLinkToRequest()
+                currHostWithSchema = utils.getHostWithSchemaOfLink(completeLink)
+
                 hostInfo = self._hostsInfo.getHostInfo(currHostWithSchema)
 
                 self._requestForRobotsOfHostIfNecessary(hostInfo)
-                
                 if self._shouldAccessPage(completeLink, hostInfo):
 
-                    httpResponse = webAccess.request('GET', completeLink, headers=Worker.REQ_HEADERS)
+                    webAccess.GETRequest(completeLink)
                     logging.info(f"Fez requisição para: {completeLink}")
 
-                    if self._responseSuccess(httpResponse):
+                    if webAccess.lastRequestSuccess():
 
+                        httpResponse = webAccess.lastResponseText()
                         htmlParser.parse(httpResponse.text)
                         urlsFound = htmlParser.getAllLinksFromParsedHTML()
 
@@ -198,7 +167,13 @@ class Worker():
 
             if not self._hasLinkToRequest():
                 logging.info("Terminou Operações")
-                finishedOperations = True
+                allWorkersFinished = True
+
+    def _getNextLinkToRequest(self):
+        nextHost = self._getNextHostToRequest()
+        nextHostResource = self._getNextResourceToRequestOfHost(nextHost)
+        completeLink = self._getLinkFrom(nextHost, nextHostResource)
+        return completeLink
     
     def _sendLinksToProperWorkers(self, linksByWorker:dict):
         for workerId, linksToSend in linksByWorker.items():
@@ -238,14 +213,6 @@ class Worker():
 
         workerToWorkerLock.release()
     
-    def _getCustomPoolManager(self):
-        customRetries = urllib3.Retry(3, redirect=10)
-        return urllib3.PoolManager(
-                                    retries=customRetries,
-                                    cert_reqs='CERT_REQUIRED',
-                                    ca_certs=certifi.where()
-                                )
-    
     def _shouldAccessPage(self, completeLink:str, hostInfo:Host.HostInfo) -> bool:
 
         allowed = hostInfo.canAccessPage(completeLink)
@@ -254,5 +221,9 @@ class Worker():
 
         return allowed and passHeuristics
     
-    def _responseSuccess(self, httpResponse):
-        return str(httpResponse.status)[0] == "2"
+    def getCrawlingInfo(self) -> str:
+        hostsOnQueue = [host for host in self._hostsOnQueue]
+        requestsMade = self._hostsInfo.getCrawledResourcesPerHost()
+        requestsToBeDone = str(self._hostsInfo)
+
+        return f"Hosts on Queue:\n{hostsOnQueue}\nRequests to be Done:\n{requestsToBeDone}\nRequests Made:\n{requestsMade}"
