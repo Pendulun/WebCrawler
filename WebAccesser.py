@@ -38,7 +38,7 @@ class WebAccesser():
     
     def lastResponseText(self) -> str:
         if self._lastResponse != None:
-            return self._lastResponse.text
+            return self._lastResponse.data
         else:
             return None
     
@@ -48,3 +48,11 @@ class WebAccesser():
             return str(self._lastResponse.status)[0] == SUCCESS_FIRST_CHAR
         else:
             return False
+    
+    #httpResponse é do tipo urllib3.response.HTTPResponse
+    #https://urllib3.readthedocs.io/en/stable/reference/urllib3.response.html?highlight=HTTPResponse#urllib3.response.HTTPResponse
+    def lastResponseHasTextHtmlContent(self) -> bool:
+        if self._lastResponse == None:
+            return False
+        else:
+            return self._lastResponse.headers['content-type'] == 'text/html'

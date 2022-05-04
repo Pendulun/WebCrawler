@@ -134,54 +134,57 @@ class Worker():
 
                 completeLink = self._getNextLinkToRequest()
                 currHostWithSchema = utils.getHostWithSchemaOfLink(completeLink)
-
                 hostInfo = self._hostsInfo.getHostInfo(currHostWithSchema)
 
                 self._requestForRobotsOfHostIfNecessary(hostInfo)
                 if self._shouldAccessPage(completeLink, hostInfo):
 
-                    try:
-                        webAccess.GETRequest(completeLink)
-                    except Exception as e:
-                        logging.exception(f"{e}")
-                        #Adicionar mais uma vez o link
-                    else:
+                    self._accessPage(htmlParser, webAccess, completeLink, hostInfo)
 
-                        logging.info(f"Fez requisição para: {completeLink}")
+                hostInfo.markResourceAsCrawled(utils.getResourcesFromLink(completeLink))
 
-                        if webAccess.lastRequestSuccess():
-
-                            httpResponse = webAccess.lastResponseText()
-                            htmlParser.parse(httpResponse.text)
-                            urlsFound = htmlParser.getAllLinksFromParsedHTML()
-                            treatedUrls = htmlParser.formatUrlsWithHostIfNeeded(urlsFound, currHostWithSchema)
-
-                            linksByWorker = self._workersPipeline.separateLinksByWorker(treatedUrls)
-                            
-                            myLinks = linksByWorker[self._id]
-                            self.addAllLinksToRequest(myLinks)
-
-                            linksByWorker.pop(self._id, None)
-                            self._workersPipeline.sendLinksToProperWorkers(linksByWorker)
-
-                            #If host resources is not empty, add it again to the priorityQueue
-                            #with proper timestamp
-
-                            #Mark this page as already crawled
-                            pass
-                    
-                
             self._tryToCompleteWithReceivedLinks()
 
-            #barreira
-            if not self._hasLinkToRequest():
-                #Espera alguém avisar que pode sair
-                #Avisar o Pipeline que estou esperando
+            if self._hasLinkToRequest():
+                continue
+            else:
+                #barreira
+                #espero alguém avisar pra eu continuar
                 pass
 
             if not self._hasLinkToRequest():
                 logging.info("Terminou Operações")
                 allWorkersFinished = True
+
+    def _accessPage(self, htmlParser:Parser.HTMLParser, webAccess:WebAccesser, completeLink:str, hostInfo:Host.HostInfo):
+        currHostWithSchema = hostInfo.hostNameWithSchema
+
+        try:
+            webAccess.GETRequest(completeLink)
+        except Exception as e:
+            logging.exception(f"{e}")
+            
+            #Adicionar mais uma vez o link
+
+        else:
+            logging.info(f"Fez requisição para: {completeLink}")
+
+            if webAccess.lastRequestSuccess() and webAccess.lastResponseHasTextHtmlContent():
+                httpResponse = webAccess.lastResponseText()
+                htmlParser.parse(httpResponse.text)
+                urlsFound = htmlParser.getAllLinksFromParsedHTML()
+                treatedUrls = htmlParser.formatUrlsWithHostIfNeeded(urlsFound, currHostWithSchema)
+
+                linksByWorker = self._workersPipeline.separateLinksByWorker(treatedUrls)
+                            
+                myLinks = linksByWorker[self._id]
+                self.addAllLinksToRequest(myLinks)
+
+                linksByWorker.pop(self._id, None)
+                self._workersPipeline.sendLinksToProperWorkers(linksByWorker)
+
+        if not hostInfo.emptyOfResources():
+            self._addHostToRequest(hostInfo.hostNameWithSchema, hostInfo.nextRequestAllowedTimestampFromNow())
 
     def _getNextLinkToRequest(self):
         nextHost = self._getNextHostToRequest()
