@@ -1,3 +1,4 @@
+from urllib3.exceptions import NewConnectionError, TimeoutError, MaxRetryError
 from threading import Lock, Condition
 from WorkersPipeline import WorkersPipeline
 from WebAccesser import WebAccesser
@@ -155,36 +156,58 @@ class Worker():
             if not self._hasLinkToRequest():
                 logging.info("Terminou Operações")
                 allWorkersFinished = True
+    
+    def _shouldAccessPage(self, completeLink:str, hostInfo:Host.HostInfo) -> bool:
+
+        allowed = hostInfo.canAccessPage(completeLink)
+
+        passHeuristics = UnwantedPagesHeuristics.passHeuristicsAccess(completeLink)
+
+        return allowed and passHeuristics
 
     def _accessPage(self, htmlParser:Parser.HTMLParser, webAccess:WebAccesser, completeLink:str, hostInfo:Host.HostInfo):
         currHostWithSchema = hostInfo.hostNameWithSchema
 
         try:
             webAccess.GETRequest(completeLink)
-        except Exception as e:
+        except (TimeoutError, NewConnectionError) as e:
             logging.exception(f"{e}")
             
-            #Adicionar mais uma vez o link
+            #Add the same link again for retry
+            self.addLinkToRequest(completeLink)
+            
+        except MaxRetryError as e:
+            logging.exception(f"Max Retries reached ERROR for: {completeLink}")
+        except Exception as e:
+            logging.exception(f"Some error occurred whe requesting {completeLink}")
 
         else:
             logging.info(f"Fez requisição para: {completeLink}")
 
             if webAccess.lastRequestSuccess() and webAccess.lastResponseHasTextHtmlContent():
-                httpResponse = webAccess.lastResponseText()
-                htmlParser.parse(httpResponse.text)
-                urlsFound = htmlParser.getAllLinksFromParsedHTML()
-                treatedUrls = htmlParser.formatUrlsWithHostIfNeeded(urlsFound, currHostWithSchema)
+                
+                treatedUrls = self._getAllLinksFromPage(htmlParser, webAccess, currHostWithSchema)
 
-                linksByWorker = self._workersPipeline.separateLinksByWorker(treatedUrls)
-                            
-                myLinks = linksByWorker[self._id]
-                self.addAllLinksToRequest(myLinks)
-
-                linksByWorker.pop(self._id, None)
-                self._workersPipeline.sendLinksToProperWorkers(linksByWorker)
+                self._distributeUrlsToWorkers(treatedUrls)
 
         if not hostInfo.emptyOfResources():
             self._addHostToRequest(hostInfo.hostNameWithSchema, hostInfo.nextRequestAllowedTimestampFromNow())
+
+    def _getAllLinksFromPage(self, htmlPageParser:Parser.HTMLParser, webAccess:WebAccesser, currHostWithSchema:str):
+        httpResponse = webAccess.lastResponseText()
+        htmlPageParser.parse(httpResponse.data)
+        urlsFound = htmlPageParser.getAllLinksFromParsedHTML()
+        treatedUrls = htmlPageParser.formatUrlsWithHostIfNeeded(urlsFound, currHostWithSchema)
+        return treatedUrls
+
+    def _distributeUrlsToWorkers(self, treatedUrls):
+        linksByWorker = self._workersPipeline.separateLinksByWorker(treatedUrls)
+                            
+        myLinks = linksByWorker[self._id]
+        self.addAllLinksToRequest(myLinks)
+
+        linksByWorker.pop(self._id, None)
+        self._workersPipeline.sendLinksToProperWorkers(linksByWorker)
 
     def _getNextLinkToRequest(self):
         nextHost = self._getNextHostToRequest()
@@ -197,6 +220,19 @@ class Worker():
             hostInfo.tryFirstAccessToRobots()
             #talvez desnecessário
             hostInfo.saveLinksFromSitemapIfPossible()
+    
+    def _tryToCompleteWithReceivedLinks(self):
+        workerToWorkerLock = self._workersPipeline.getWorkerToWorkerLockOfWorker(self._id)
+        workerToWorkerLock.acquire()
+
+        linksWorkersSentToMe = self._workersPipeline.getWorkerToWorkerOfWorker(self._id)
+        if(len(linksWorkersSentToMe) > 0):
+            #Completar a minha Queue
+            while linksWorkersSentToMe:
+                newLink = linksWorkersSentToMe.popleft()
+                self.addLinkToRequest(newLink)
+
+        workerToWorkerLock.release()
 
     def _hasLinkToRequest(self) -> bool:
         return not self._hostsQueue.empty()
@@ -211,27 +247,6 @@ class Worker():
     def _getLinkFrom(self, nextHost:str, nextHostResource:str) -> str:
         link = f"{nextHost}/{nextHostResource}"
         return link
-
-    def _tryToCompleteWithReceivedLinks(self):
-        workerToWorkerLock = self._workersPipeline.getWorkerToWorkerLockOfWorker(self._id)
-        workerToWorkerLock.acquire()
-
-        linksWorkersSentToMe = self._workersPipeline.getWorkerToWorkerOfWorker(self._id)
-        if(len(linksWorkersSentToMe) > 0):
-            #Completar a minha Queue
-            while linksWorkersSentToMe:
-                newLink = linksWorkersSentToMe.popleft()
-                self.addLinkToRequest(newLink)
-
-        workerToWorkerLock.release()
-    
-    def _shouldAccessPage(self, completeLink:str, hostInfo:Host.HostInfo) -> bool:
-
-        allowed = hostInfo.canAccessPage(completeLink)
-
-        passHeuristics = UnwantedPagesHeuristics.passHeuristicsAccess(completeLink)
-
-        return allowed and passHeuristics
     
     def getCrawlingInfo(self) -> str:
         hostsOnQueue = [host for host in self._hostsOnQueue]
