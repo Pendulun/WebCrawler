@@ -126,7 +126,11 @@ class WorkersPipeline():
                 for link in mappedLinks:
                     workerLinkDeque.append(link)
                 workerLock.release()
-    
+
+    def sendLinksToProperWorkers(self, linksByWorker:dict):
+        for workerId, linksToSend in linksByWorker.items():
+            self.sendLinksToWorker(linksToSend, workerId)
+
     def sendLinksToWorker(self, links:list, workerId:int):
         hostsWithSchemaToLinksMap = self._mapLinkResoursesToHosts(links)
 

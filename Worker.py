@@ -95,11 +95,20 @@ class Worker():
         hostWithSchema, resources = utils.getHostWithSchemaAndResourcesFromLink(newLink)
 
         if not self._hostsInfo.alreadyCrawled(hostWithSchema, resources):
-            self._hostsInfo.createInfoForHostIfNotExists(hostWithSchema)
+            
+            firstTimeHost = False
+            if not self._hostsInfo.hostExists(hostWithSchema):
+                firstTimeHost = True
+                self._hostsInfo.createInfoForHostIfNotExists(hostWithSchema)
+
             self._putResourceIntoResourcesQueueOfHost(hostWithSchema, resources)
 
             if hostWithSchema not in self._hostsOnQueue:
-                self._addHostWithMaxPriorityToRequest(hostWithSchema)
+                if firstTimeHost:
+                    self._addHostWithMaxPriorityToRequest(hostWithSchema)
+                else:
+                    hostInfo = self._hostsInfo.getHostInfo(hostWithSchema)
+                    self._addHostToRequest(hostWithSchema, hostInfo.nextRequestAllowedTimestampFromNow())
     
     def _putResourceIntoResourcesQueueOfHost(self, host:str, resource:str):
         hostInfo = self._hostsInfo.getHostInfo(host)
@@ -131,30 +140,35 @@ class Worker():
                 self._requestForRobotsOfHostIfNecessary(hostInfo)
                 if self._shouldAccessPage(completeLink, hostInfo):
 
-                    webAccess.GETRequest(completeLink)
-                    logging.info(f"Fez requisição para: {completeLink}")
+                    try:
+                        webAccess.GETRequest(completeLink)
+                    except Exception as e:
+                        logging.exception(f"{e}")
+                        #Adicionar mais uma vez o link
+                    else:
 
-                    if webAccess.lastRequestSuccess():
+                        logging.info(f"Fez requisição para: {completeLink}")
 
-                        httpResponse = webAccess.lastResponseText()
-                        htmlParser.parse(httpResponse.text)
-                        urlsFound = htmlParser.getAllLinksFromParsedHTML()
+                        if webAccess.lastRequestSuccess():
 
-                        treatedUrls = htmlParser.formatUrlsWithHostIfNeeded(urlsFound, currHostWithSchema)
+                            httpResponse = webAccess.lastResponseText()
+                            htmlParser.parse(httpResponse.text)
+                            urlsFound = htmlParser.getAllLinksFromParsedHTML()
+                            treatedUrls = htmlParser.formatUrlsWithHostIfNeeded(urlsFound, currHostWithSchema)
 
-                        linksByWorker = self._workersPipeline.separateLinksByWorker(treatedUrls)
-                        
-                        myLinks = linksByWorker[self._id]
-                        self.addAllLinksToRequest(myLinks)
+                            linksByWorker = self._workersPipeline.separateLinksByWorker(treatedUrls)
+                            
+                            myLinks = linksByWorker[self._id]
+                            self.addAllLinksToRequest(myLinks)
 
-                        linksByWorker.pop(self._id, None)
-                        self._sendLinksToProperWorkers(linksByWorker)
+                            linksByWorker.pop(self._id, None)
+                            self._workersPipeline.sendLinksToProperWorkers(linksByWorker)
 
-                        #If host resources is not empty, add it again to the priorityQueue
-                        #with proper timestamp
+                            #If host resources is not empty, add it again to the priorityQueue
+                            #with proper timestamp
 
-                        #Mark this page as already crawled
-                        pass
+                            #Mark this page as already crawled
+                            pass
                     
                 
             self._tryToCompleteWithReceivedLinks()
@@ -174,11 +188,6 @@ class Worker():
         nextHostResource = self._getNextResourceToRequestOfHost(nextHost)
         completeLink = self._getLinkFrom(nextHost, nextHostResource)
         return completeLink
-    
-    def _sendLinksToProperWorkers(self, linksByWorker:dict):
-        for workerId, linksToSend in linksByWorker.items():
-            logging.info(f"Thread {self._id} enviando para Thread {workerId}")
-            self._workersPipeline.sendLinksToWorker(linksToSend, workerId)
 
     def _requestForRobotsOfHostIfNecessary(self, hostInfo:Host.HostInfo):
         if not hostInfo.hasRobots():

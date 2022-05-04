@@ -92,15 +92,17 @@ class HostInfo():
 
         return self._robots.allowed(completePageLink, HostInfo.AGENTNAME)
     
-    def requestDelay(self) -> int:
+    def requestDelaySeconds(self) -> float:
+        MIN_DELAY_TIME_SECONDS = 0.1
+
         if self._couldNotAccessRobots:
-            return 0
+            return MIN_DELAY_TIME_SECONDS
         
         if self._robots == None:
             self.tryFirstAccessToRobots()
         
             if self._robots == None:
-                return 0
+                return MIN_DELAY_TIME_SECONDS
         
         return self._robots.agent(HostInfo.AGENTNAME).delay
 
@@ -177,10 +179,9 @@ class HostInfo():
         
         return linksToPagesFound
 
-    
     def nextRequestAllowedTimestampFromNow(self):
         now = datetime.now()
-        delay = datetime.timedelta(seconds=self.requestDelay())
+        delay = datetime.timedelta(seconds=self.requestDelaySeconds())
         nextAllowedTime = now + delay
         return datetime.timestamp(nextAllowedTime)
 
