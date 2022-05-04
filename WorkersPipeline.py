@@ -73,17 +73,19 @@ class WorkersPipeline():
     def getWorkerToWorkerLockOfWorker(self, workerId:int) -> Lock:
         return self._workerToWorkerLock[workerId]
     
-    def getWorkerToWorkerOfWorker(self, workerId:int) -> deque:
+    def getLinksSentToWorker(self, workerId:int) -> deque:
         return self._workerToWorkerLink[workerId]
     
-    def addLinksToProperWorkers(self, linkList:list):
-        
-        hostsWithSchemaToLinksMap = self._mapLinkResoursesToHosts(linkList)
-        
-        hostsAndResourcesToWorkerMap = self._mapResoursesToWorkers(hostsWithSchemaToLinksMap)
-
-        self._sendResourcesToWorkers(hostsAndResourcesToWorkerMap)
-
+    def sendLinksToProperWorkers(self, linksByWorker:dict):
+        hostsAndResourcesToWorkerMap = dict()
+        for workerId, linksToSend in linksByWorker.items():
+            hostsWithSchemaToLinksMap = self._mapLinkResoursesToHosts(linksToSend)
+            hostsAndResourcesToWorkerMap[workerId] = [
+                    (hostWithSchema, resources) for hostWithSchema, resources in hostsWithSchemaToLinksMap.items()
+                    ]
+            
+            self._sendResourcesToWorkers(hostsAndResourcesToWorkerMap)
+    
     def _mapLinkResoursesToHosts(self, linkList:list) -> dict:
         hostsToLinksMap = dict()
         for link in linkList:
@@ -94,26 +96,6 @@ class WorkersPipeline():
             
             hostsToLinksMap[hostWithSchema] = resource
         return hostsToLinksMap
-    
-    def _mapResoursesToWorkers(self, hostsWithSchemaToLinksMap: dict) -> dict:
-        hostsAndResourcesToWorkerMap = dict()
-
-        for workerId in range(self._numWorkers):
-            hostsAndResourcesToWorkerMap[workerId] = list()
-        
-        for hostWithSchema, resources in hostsWithSchemaToLinksMap.items():
-            workerId = utils.threadOfHost(self._numWorkers, hostWithSchema)
-            
-            hostsAndResourcesToWorkerMap = self._addHostAndResourcesToWorkerQueue(  hostsAndResourcesToWorkerMap,
-                                                                                    workerId, hostWithSchema, 
-                                                                                    resources
-                                                                                    )
-
-        return hostsAndResourcesToWorkerMap
-
-    def _addHostAndResourcesToWorkerQueue(self, hostsAndResourcesToWorkerMap:dict, workerId:int, hostWithSchema:str, resources:list):
-        hostsAndResourcesToWorkerMap[workerId].append((hostWithSchema, resources))
-        return hostsAndResourcesToWorkerMap
     
     def _sendResourcesToWorkers(self, hostsAndResourcesToWorkerMap:dict):
         for workerId, mappedLinks in hostsAndResourcesToWorkerMap.items():
@@ -126,23 +108,6 @@ class WorkersPipeline():
                 for link in mappedLinks:
                     workerLinkDeque.append(link)
                 workerLock.release()
-
-    def sendLinksToProperWorkers(self, linksByWorker:dict):
-        for workerId, linksToSend in linksByWorker.items():
-            self.sendLinksToWorker(linksToSend, workerId)
-
-    def sendLinksToWorker(self, links:list, workerId:int):
-        hostsWithSchemaToLinksMap = self._mapLinkResoursesToHosts(links)
-
-        hostsAndResourcesToWorkerMap = dict()
-        hostsAndResourcesToWorkerMap[workerId] = list()
-        for hostWithSchema, resources in hostsWithSchemaToLinksMap.items():
-            hostsAndResourcesToWorkerMap = self._addHostAndResourcesToWorkerQueue(  hostsAndResourcesToWorkerMap,
-                                                                                    workerId, hostWithSchema,
-                                                                                    resources
-                                                                                    )
-
-        self._sendResourcesToWorkers(hostsAndResourcesToWorkerMap)
     
     def separateLinksByWorker(self, urls:set) -> dict:
         linkByHost = dict()

@@ -2,6 +2,7 @@ from urllib3.exceptions import NewConnectionError, TimeoutError, MaxRetryError
 from threading import Lock, Condition
 from WorkersPipeline import WorkersPipeline
 from WebAccesser import WebAccesser
+from collections import deque
 from queue import PriorityQueue
 from reppy import Robots
 import Host
@@ -140,11 +141,16 @@ class Worker():
                 self._requestForRobotsOfHostIfNecessary(hostInfo)
                 if self._shouldAccessPage(completeLink, hostInfo):
 
-                    self._accessPage(htmlParser, webAccess, completeLink, hostInfo)
+                    self._accessPageAndGetLinks(htmlParser, webAccess, completeLink, hostInfo)
+
+                    if not hostInfo.emptyOfResources():
+                        self._addHostToRequest(hostInfo.hostNameWithSchema, hostInfo.nextRequestAllowedTimestampFromNow())
 
                 hostInfo.markResourceAsCrawled(utils.getResourcesFromLink(completeLink))
 
             self._tryToCompleteWithReceivedLinks()
+
+            #Colocar uma barreira aqui
 
             if self._hasLinkToRequest():
                 continue
@@ -153,7 +159,8 @@ class Worker():
                 #espero alguém avisar pra eu continuar
                 pass
 
-            if not self._hasLinkToRequest():
+            yetDontHaveLinks = not self._hasLinkToRequest()
+            if yetDontHaveLinks:
                 logging.info("Terminou Operações")
                 allWorkersFinished = True
     
@@ -165,19 +172,21 @@ class Worker():
 
         return allowed and passHeuristics
 
-    def _accessPage(self, htmlParser:Parser.HTMLParser, webAccess:WebAccesser, completeLink:str, hostInfo:Host.HostInfo):
+    def _accessPageAndGetLinks(self, htmlParser:Parser.HTMLParser, webAccess:WebAccesser, completeLink:str, hostInfo:Host.HostInfo):
         currHostWithSchema = hostInfo.hostNameWithSchema
 
         try:
             webAccess.GETRequest(completeLink)
         except (TimeoutError, NewConnectionError) as e:
-            logging.exception(f"{e}")
+            logging.exception(f"Erro de conexão com {completeLink}. Recolocando na fila para tentar de novo")
             
-            #Add the same link again for retry
+            #Add the same link again for retry later
+            #as might have had internet problems
             self.addLinkToRequest(completeLink)
             
         except MaxRetryError as e:
             logging.exception(f"Max Retries reached ERROR for: {completeLink}")
+
         except Exception as e:
             logging.exception(f"Some error occurred whe requesting {completeLink}")
 
@@ -189,9 +198,6 @@ class Worker():
                 treatedUrls = self._getAllLinksFromPage(htmlParser, webAccess, currHostWithSchema)
 
                 self._distributeUrlsToWorkers(treatedUrls)
-
-        if not hostInfo.emptyOfResources():
-            self._addHostToRequest(hostInfo.hostNameWithSchema, hostInfo.nextRequestAllowedTimestampFromNow())
 
     def _getAllLinksFromPage(self, htmlPageParser:Parser.HTMLParser, webAccess:WebAccesser, currHostWithSchema:str):
         httpResponse = webAccess.lastResponseText()
@@ -222,17 +228,17 @@ class Worker():
             hostInfo.saveLinksFromSitemapIfPossible()
     
     def _tryToCompleteWithReceivedLinks(self):
-        workerToWorkerLock = self._workersPipeline.getWorkerToWorkerLockOfWorker(self._id)
-        workerToWorkerLock.acquire()
+        linksWorkersSentToMeLock = self._workersPipeline.getWorkerToWorkerLockOfWorker(self._id)
+        linksWorkersSentToMeLock.acquire()
 
-        linksWorkersSentToMe = self._workersPipeline.getWorkerToWorkerOfWorker(self._id)
+        linksWorkersSentToMe = self._workersPipeline.getLinksSentToWorker(self._id)
         if(len(linksWorkersSentToMe) > 0):
-            #Completar a minha Queue
+            
             while linksWorkersSentToMe:
                 newLink = linksWorkersSentToMe.popleft()
                 self.addLinkToRequest(newLink)
 
-        workerToWorkerLock.release()
+        linksWorkersSentToMeLock.release()
 
     def _hasLinkToRequest(self) -> bool:
         return not self._hostsQueue.empty()
