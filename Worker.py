@@ -131,7 +131,10 @@ class Worker():
         htmlParser = Parser.HTMLParser()
         webAccess = WebAccesser()
 
+        CHECK_FOR_OTHER_LINKS_EVERY_NUM_REQUESTS = 10
         while not allWorkersFinished:
+
+            shouldCheckForOtherLinksCount = 0
             while self._hasLinkToRequest():
 
                 completeLink = self._getNextLinkToRequest()
@@ -147,28 +150,21 @@ class Worker():
                         self._addHostToRequest(hostInfo.hostNameWithSchema, hostInfo.nextRequestAllowedTimestampFromNow())
 
                 hostInfo.markResourceAsCrawled(utils.getResourcesFromLink(completeLink))
+                shouldCheckForOtherLinksCount+=1
 
-            self._tryToCompleteWithReceivedLinks()
-
-            #Avisa que está esperando
-            #while not temLinksParaEle and not terminouTudo:
-
-            #   while(receivedLinksOrTerminated.wait() != 0):
-
-            #se not recebeuLinks, vai embora
-            # se recebeu, completaLinks e volta pro while
+                if shouldCheckForOtherLinksCount == CHECK_FOR_OTHER_LINKS_EVERY_NUM_REQUESTS:
+                    self._tryToCompleteWithReceivedLinks()
+                    shouldCheckForOtherLinksCount = 0
             
-            if self._hasLinkToRequest():
-                continue
-            else:
-                #barreira
-                #espero alguém avisar pra eu continuar
-                pass
+            #wait
+            self._workersPipeline.waitForLinkEvent(self._id)
+            self._workersPipeline.unsetWorkerWaiting(self.id)
 
-            yetDontHaveLinks = not self._hasLinkToRequest()
-            if yetDontHaveLinks:
+            if self._workersPipeline.allDone:
                 logging.info("Terminou Operações")
                 allWorkersFinished = True
+            else:
+                self._tryToCompleteWithReceivedLinks()
     
     def _shouldAccessPage(self, completeLink:str, hostInfo:Host.HostInfo) -> bool:
 
@@ -234,17 +230,12 @@ class Worker():
             hostInfo.saveLinksFromSitemapIfPossible()
     
     def _tryToCompleteWithReceivedLinks(self):
-        linksWorkersSentToMeLock = self._workersPipeline.getWorkerToWorkerLockOfWorker(self._id)
-        linksWorkersSentToMeLock.acquire()
-
+        
         linksWorkersSentToMe = self._workersPipeline.getLinksSentToWorker(self._id)
-        if(len(linksWorkersSentToMe) > 0):
             
-            while linksWorkersSentToMe:
-                newLink = linksWorkersSentToMe.popleft()
-                self.addLinkToRequest(newLink)
-
-        linksWorkersSentToMeLock.release()
+        while len(linksWorkersSentToMe) > 0:
+            newLink = linksWorkersSentToMe.popleft()
+            self.addLinkToRequest(newLink)
 
     def _hasLinkToRequest(self) -> bool:
         return not self._hostsQueue.empty()
