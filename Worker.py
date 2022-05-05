@@ -131,40 +131,70 @@ class Worker():
         htmlParser = Parser.HTMLParser()
         webAccess = WebAccesser()
 
-        CHECK_FOR_OTHER_LINKS_EVERY_NUM_REQUESTS = 10
+        
         while not allWorkersFinished:
 
-            shouldCheckForOtherLinksCount = 0
-            while self._hasLinkToRequest():
-
-                completeLink = self._getNextLinkToRequest()
-                currHostWithSchema = utils.getHostWithSchemaOfLink(completeLink)
-                hostInfo = self._hostsInfo.getHostInfo(currHostWithSchema)
-
-                self._requestForRobotsOfHostIfNecessary(hostInfo)
-                if self._shouldAccessPage(completeLink, hostInfo):
-
-                    self._accessPageAndGetLinks(htmlParser, webAccess, completeLink, hostInfo)
-
-                    if not hostInfo.emptyOfResources():
-                        self._addHostToRequest(hostInfo.hostNameWithSchema, hostInfo.nextRequestAllowedTimestampFromNow())
-
-                hostInfo.markResourceAsCrawled(utils.getResourcesFromLink(completeLink))
-                shouldCheckForOtherLinksCount+=1
-
-                if shouldCheckForOtherLinksCount == CHECK_FOR_OTHER_LINKS_EVERY_NUM_REQUESTS:
-                    self._tryToCompleteWithReceivedLinks()
-                    shouldCheckForOtherLinksCount = 0
+            self._crawlUntilItCan(htmlParser, webAccess)
             
-            #wait
-            self._workersPipeline.waitForLinkEvent(self._id)
-            self._workersPipeline.unsetWorkerWaiting(self.id)
+            self._workersPipeline.waitForLinkOrAllDoneEvent(self._id)
 
             if self._workersPipeline.allDone:
                 logging.info("Terminou Operações")
                 allWorkersFinished = True
             else:
                 self._tryToCompleteWithReceivedLinks()
+
+    def _crawlUntilItCan(self, htmlParser:Parser.HTMLParser, webAccess:WebAccesser):
+        
+        shouldCheckForOtherLinksCount = 0
+        CHECK_FOR_OTHER_LINKS_EVERY_NUM_REQUESTS = 15
+
+        while self._hasLinkToRequest():
+
+            completeLink = self._getNextLinkToRequest()
+            currHostWithSchema = utils.getHostWithSchemaOfLink(completeLink)
+            hostInfo = self._hostsInfo.getHostInfo(currHostWithSchema)
+
+            self._requestForRobotsOfHostIfNecessary(hostInfo)
+
+            if self._shouldAccessPage(completeLink, hostInfo):
+                self._accessPageAndGetLinks(htmlParser, webAccess, completeLink, hostInfo)
+
+                if not hostInfo.emptyOfResources():
+                    self._addHostToRequest(hostInfo.hostNameWithSchema, hostInfo.nextRequestAllowedTimestampFromNow())
+
+            hostInfo.markResourceAsCrawled(utils.getResourcesFromLink(completeLink))
+            shouldCheckForOtherLinksCount+=1
+
+            if shouldCheckForOtherLinksCount == CHECK_FOR_OTHER_LINKS_EVERY_NUM_REQUESTS:
+                self._tryToCompleteWithReceivedLinks()
+                shouldCheckForOtherLinksCount = 0
+    
+    def _hasLinkToRequest(self) -> bool:
+        return not self._hostsQueue.empty()
+    
+    def _getNextLinkToRequest(self):
+        nextHost = self._getNextHostToRequest()
+        nextHostResource = self._getNextResourceToRequestOfHost(nextHost)
+        completeLink = self._getLinkFrom(nextHost, nextHostResource)
+        return completeLink
+    
+    def _getNextHostToRequest(self) -> str:
+        return self._hostsQueue.get()
+
+    def _getNextResourceToRequestOfHost(self, host:str) -> str:
+        hostInfo = self._hostsInfo.getHostInfo(host)
+        return hostInfo.getNextResource()
+    
+    def _getLinkFrom(self, nextHost:str, nextHostResource:str) -> str:
+        link = f"{nextHost}/{nextHostResource}"
+        return link
+
+    def _requestForRobotsOfHostIfNecessary(self, hostInfo:Host.HostInfo):
+        if not hostInfo.hasRobots():
+            hostInfo.tryFirstAccessToRobots()
+            #talvez desnecessário
+            hostInfo.saveLinksFromSitemapIfPossible()
     
     def _shouldAccessPage(self, completeLink:str, hostInfo:Host.HostInfo) -> bool:
 
@@ -216,18 +246,6 @@ class Worker():
 
         linksByWorker.pop(self._id, None)
         self._workersPipeline.sendLinksToProperWorkers(linksByWorker)
-
-    def _getNextLinkToRequest(self):
-        nextHost = self._getNextHostToRequest()
-        nextHostResource = self._getNextResourceToRequestOfHost(nextHost)
-        completeLink = self._getLinkFrom(nextHost, nextHostResource)
-        return completeLink
-
-    def _requestForRobotsOfHostIfNecessary(self, hostInfo:Host.HostInfo):
-        if not hostInfo.hasRobots():
-            hostInfo.tryFirstAccessToRobots()
-            #talvez desnecessário
-            hostInfo.saveLinksFromSitemapIfPossible()
     
     def _tryToCompleteWithReceivedLinks(self):
         
@@ -236,20 +254,6 @@ class Worker():
         while len(linksWorkersSentToMe) > 0:
             newLink = linksWorkersSentToMe.popleft()
             self.addLinkToRequest(newLink)
-
-    def _hasLinkToRequest(self) -> bool:
-        return not self._hostsQueue.empty()
-    
-    def _getNextHostToRequest(self) -> str:
-        return self._hostsQueue.get()
-    
-    def _getNextResourceToRequestOfHost(self, host:str) -> str:
-        hostInfo = self._hostsInfo.getHostInfo(host)
-        return hostInfo.getNextResource()
-    
-    def _getLinkFrom(self, nextHost:str, nextHostResource:str) -> str:
-        link = f"{nextHost}/{nextHostResource}"
-        return link
     
     def getCrawlingInfo(self) -> str:
         hostsOnQueue = [host for host in self._hostsOnQueue]

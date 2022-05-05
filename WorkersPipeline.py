@@ -13,22 +13,19 @@ class WorkersPipeline():
         self._numWorkers = len(list(workers.keys()))
         
         self._workerToWorkerLink = {}
-        
-        for workerId in list(self._workers.keys()):
-            self._workerToWorkerLink[workerId] = deque()
-        
         self._workerToWorkerLock = {}
-        for workerId in list(self._workers.keys()):
-            self._workerToWorkerLock[workerId] = Lock()
-        
+
         # https://docs.python.org/3/library/threading.html#condition-objects
         self._workerWaitingLinks = {}
-        #talvez não vou usar esse lock
-        self._workerWaitingLinksLock = {}
+        self._workerWaitingLinksDictLock = Lock()
+
         self._workerWaitingLinksEvent = {}
+        self._workerWaitingLinksEventLock = Lock()
         for workerId in list(self._workers.keys()):
+            self._workerToWorkerLink[workerId] = deque()
+            self._workerToWorkerLock[workerId] = Lock()
+
             self._workerWaitingLinks[workerId] = False
-            self._workerWaitingLinksLock[workerId] = Lock()
             self._workerWaitingLinksEvent[workerId] = Event()
         
         self._allDone = False
@@ -84,8 +81,12 @@ class WorkersPipeline():
     def getLinksSentToWorker(self, workerId:int) -> deque:
         receivedLinksLock = self._getWorkerToWorkerLockOfWorker(self._id)
         receivedLinksLock.acquire()
+        self._workerWaitingLinksEventLock.acquire()
+        
         linksReceived = self._workerToWorkerLink[workerId]
         self._workerWaitingLinksEvent[workerId].clear()
+
+        self._workerWaitingLinksEventLock.release()
         receivedLinksLock.release()
 
         return linksReceived
@@ -117,7 +118,7 @@ class WorkersPipeline():
     def _sendResourcesToWorkers(self, hostsAndResourcesToWorkerMap:dict):
         for workerId, mappedLinks in hostsAndResourcesToWorkerMap.items():
             if len(mappedLinks) > 0:
-                workerLock = self._workerToWorkerLock[workerId]
+                workerLock = self._getWorkerToWorkerLockOfWorker(workerId)
 
                 workerLock.acquire()
                 logging.info(f"Worker Pipeline colocando elementos na fila do Worker {workerId}")
@@ -130,7 +131,44 @@ class WorkersPipeline():
                 workerLock.release()
 
     def _signalWorkerReceivedLinkEvent(self, workerId):
+        self._workerWaitingLinksEventLock.acquire()
         self._workerWaitingLinksEvent[workerId].set()
+        self._workerWaitingLinksEventLock.release()
+        
+    def _unsetWorkerWaiting(self, workerId:int):
+        self._workerWaitingLinksDictLock.acquire()
+        self._workerWaitingLinks[workerId] = False
+        self._workerWaitingLinksDictLock.release()
+
+    def waitForLinkOrAllDoneEvent(self, workerId:int):
+        self._setWorkerWaiting(workerId)
+        
+        #I think that I dont need to acquire a lock
+        #to run this line
+        self._workerWaitingLinksEvent[workerId].wait()
+        self._unsetWorkerWaiting(workerId)
+    
+    def _setWorkerWaiting(self, workerId:int):
+        
+        self._workerWaitingLinksDictLock.acquire()
+        self._workerWaitingLinksEventLock.acquire()
+
+        self._workerWaitingLinks[workerId] = True
+
+        everyWorkerWaiting = all([waiting for _, waiting in self._workerWaitingLinks.items()])
+        aWorkerSentLinksToAnother = any([event.is_set() for _, event in self._workerWaitingLinksEvent.items()])
+
+        timeToStop = everyWorkerWaiting and not aWorkerSentLinksToAnother
+        
+        if timeToStop:
+            self._allDone = True
+            self._wakeEveryWorkerToDie()
+        
+        self._workerWaitingLinksEventLock.release()
+        self._workerWaitingLinksDictLock.release()
+    
+    def _wakeEveryWorkerToDie(self):
+        return [event.set() for _, event in self._workerWaitingLinksEvent.items()]
     
     def separateLinksByWorker(self, urls:set) -> dict:
         linkByHost = dict()
@@ -145,24 +183,3 @@ class WorkersPipeline():
             linkByHost[workerId] = url
         
         return linkByHost
-    
-    def _setWorkerWaiting(self, workerId:int):
-        self._workerWaitingLinks[workerId] = True
-
-        everyWorkerWaiting = all([waiting for _, waiting in self._workerWaitingLinks.items()])
-        aWorkerSentLinksToAnother = any([event.is_set() for _, event in self._workerWaitingLinksEvent.items()])
-        
-        if everyWorkerWaiting and not aWorkerSentLinksToAnother:
-            self._allDone = True
-            self._wakeEveryWorkerToDie()
-
-    def _wakeEveryWorkerToDie(self):
-        return [event.set() for _, event in self._workerWaitingLinksEvent.items()]
-
-    def unsetWorkerWaiting(self, workerId:int):
-        self._workerWaitingLinks[workerId] = False
-        pass
-
-    def waitForLinkEvent(self, workerId:int):
-        self._setWorkerWaiting(workerId)
-        self._workerWaitingLinksEvent[workerId].wait()
