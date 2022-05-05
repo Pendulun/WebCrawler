@@ -1,4 +1,5 @@
 from datetime import datetime
+import logging
 from reppy import Robots
 from collections import deque
 import requests
@@ -57,6 +58,7 @@ class HostInfo():
         raise AttributeError("robots is not directly writable")
     
     def addResource(self, resource:str):
+        logging.info(f"Adicionando {self._hostNameWithSchema}{resource}")
         self._resourcesQueue.append(resource)
     
     def addResources(self, newResources):

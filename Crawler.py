@@ -13,7 +13,7 @@ class Crawler():
     def __init__(self, pagesCrawledLimit:int, numWorkers:int =1):
         
         self._workersQueues = {workerId:Worker(workerId) for workerId in range(numWorkers)}
-        self._workersPipeline = WorkersPipeline(self._workersQueues)
+        self._workersPipeline = WorkersPipeline(self._workersQueues, pagesCrawledLimit)
 
         for (_, worker) in self._workersQueues.items():
             worker.workersPipeline = self._workersPipeline 

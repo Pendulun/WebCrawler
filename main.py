@@ -80,7 +80,7 @@ if __name__ == "__main__":
             utils.printErrorMessageAndExitWithErrorCode(e, 1)
         else:
             logging.info(f"Todos o comandos foram aceitos {configs}")
-            NUMWORKERS = 4
+            NUMWORKERS = 1
             myCrawler = Crawler(configs['LIMIT'], NUMWORKERS)
             try:
                 myCrawler.startCrawlingFromSeedsFile(configs['seedPathFile'])

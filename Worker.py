@@ -38,7 +38,7 @@ class Worker():
         self._id = id
 
         #Communicator between workers
-        self._workersPipeline = WorkersPipeline({})
+        self._workersPipeline = WorkersPipeline({}, 0)
 
         #Next host to request from
         self._hostsQueue = PriorityQueue()
@@ -149,7 +149,7 @@ class Worker():
         shouldCheckForOtherLinksCount = 0
         CHECK_FOR_OTHER_LINKS_EVERY_NUM_REQUESTS = 15
 
-        while self._hasLinkToRequest():
+        while self._hasLinkToRequest() and not self._workersPipeline.maxNumPagesReached():
 
             completeLink = self._getNextLinkToRequest()
             currHostWithSchema = utils.getHostWithSchemaOfLink(completeLink)
@@ -159,6 +159,8 @@ class Worker():
 
             if self._shouldAccessPage(completeLink, hostInfo):
                 self._accessPageAndGetLinks(htmlParser, webAccess, completeLink, hostInfo)
+
+                self._workersPipeline.addNumPagesCrawled(1)
 
                 if not hostInfo.emptyOfResources():
                     self._addHostToRequest(hostInfo.hostNameWithSchema, hostInfo.nextRequestAllowedTimestampFromNow())
@@ -223,9 +225,11 @@ class Worker():
             logging.exception(f"Some error occurred whe requesting {completeLink}")
 
         else:
-            logging.info(f"Fez requisição para: {completeLink}")
+            logging.info(f"Fez requisição com sucesso para:\n{completeLink}")
 
             if webAccess.lastRequestSuccess() and webAccess.lastResponseHasTextHtmlContent():
+
+                #Se for debug, imprimir coisas
                 
                 treatedUrls = self._getAllLinksFromPage(htmlParser, webAccess, currHostWithSchema)
 

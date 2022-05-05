@@ -8,9 +8,14 @@ class WorkersPipeline():
     This represents the object that the workers use to communicate to eachother
     """
 
-    def __init__(self, workers:dict):
+    def __init__(self, workers:dict, maxNumPagesCrawled:int):
         self._workers = workers
         self._numWorkers = len(list(workers.keys()))
+
+        self._pagesCrawledLock = Lock()
+        self._numPagesCrawled = 0
+        self._maxNumPagesCrawled = maxNumPagesCrawled
+        self._maxPagesCrawledEvent = Event()
         
         self._workerToWorkerLink = {}
         self._workerToWorkerLock = {}
@@ -37,6 +42,14 @@ class WorkersPipeline():
     @numWorkers.setter
     def numWorkers(self, newNumWorkers):
         raise AttributeError("newNumWorkers is not writable")
+    
+    @property
+    def pagesCrawled(self) -> int:
+        return self._numPagesCrawled
+    
+    @pagesCrawled.setter
+    def pagesCrawled(self, pagesCrawled):
+        raise AttributeError("pagesCrawled is not writable")
     
     @property
     def allDone(self) -> bool:
@@ -77,6 +90,22 @@ class WorkersPipeline():
     @workerWaitingLinks.setter
     def workerWaitingLinks(self, newWorkerWaitingLinks):
         raise AttributeError("workerWaitingLinks is not readable or writable")
+    
+    def addNumPagesCrawled(self, numPagesCrawled:int):
+        self._pagesCrawledLock.acquire()
+        self._numPagesCrawled += numPagesCrawled
+
+        #Passou ou chegou no limite, define que é para parar
+        if self._maxNumPagesCrawled():
+            self._maxPagesCrawledEvent.set()
+
+        self._pagesCrawledLock.release()
+    
+    def _maxNumPagesCrawled(self) -> bool:
+        return self._numPagesCrawled >= self._maxNumPagesCrawled
+    
+    def maxNumPagesReached(self) -> bool:
+        return self._maxPagesCrawledEvent.is_set()
 
     def getLinksSentToWorker(self, workerId:int) -> deque:
         receivedLinksLock = self._getWorkerToWorkerLockOfWorker(self._id)
@@ -158,8 +187,11 @@ class WorkersPipeline():
         everyWorkerWaiting = all([waiting for _, waiting in self._workerWaitingLinks.items()])
         aWorkerSentLinksToAnother = any([event.is_set() for _, event in self._workerWaitingLinksEvent.items()])
 
-        timeToStop = everyWorkerWaiting and not aWorkerSentLinksToAnother
-        
+        if self.maxNumPagesReached():
+            logging.info("Percebeu que já atingiu o máximo de requests com sucesso!")
+
+        timeToStop = self.maxNumPagesReached() or (everyWorkerWaiting and not aWorkerSentLinksToAnother)
+
         if timeToStop:
             self._allDone = True
             self._wakeEveryWorkerToDie()
