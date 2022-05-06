@@ -1,4 +1,4 @@
-from datetime import datetime
+import datetime
 import logging
 from reppy import Robots
 from collections import deque
@@ -58,7 +58,6 @@ class HostInfo():
         raise AttributeError("robots is not directly writable")
     
     def addResource(self, resource:str):
-        logging.info(f"Adicionando {self._hostNameWithSchema}{resource}")
         self._resourcesQueue.append(resource)
     
     def addResources(self, newResources):
@@ -106,7 +105,10 @@ class HostInfo():
             if self._robots == None:
                 return MIN_DELAY_TIME_SECONDS
         
-        return self._robots.agent(HostInfo.AGENTNAME).delay
+        if self._robots.agent(HostInfo.AGENTNAME).delay == None:
+            return MIN_DELAY_TIME_SECONDS
+        else:
+            return self._robots.agent(HostInfo.AGENTNAME).delay
 
     def tryFirstAccessToRobots(self):
         hostRobotsPath = Robots.robots_url(self._hostNameWithSchema)
@@ -132,7 +134,7 @@ class HostInfo():
     def _findMaxLinksPossible(self, sitemapLink:str) -> list:
         sitemapPage = requests.get(sitemapLink)
         sitemapXml = sitemapPage.text
-        sitemapSoup = BeautifulSoup(sitemapXml)
+        sitemapSoup = BeautifulSoup(sitemapXml, features="html.parser")
 
         pagesInThisSitemap = self._findPagesOnSitemapSoup(sitemapSoup)
         pagesInInnerSitemaps = self._findLinksFromInnerSitemaps(sitemapSoup)
@@ -182,10 +184,10 @@ class HostInfo():
         return linksToPagesFound
 
     def nextRequestAllowedTimestampFromNow(self):
-        now = datetime.now()
+        now = datetime.datetime.now()
         delay = datetime.timedelta(seconds=self.requestDelaySeconds())
         nextAllowedTime = now + delay
-        return datetime.timestamp(nextAllowedTime)
+        return datetime.datetime.timestamp(nextAllowedTime)
 
     def getRequestsString(self) -> str:
         return str(self._resourcesQueue)
@@ -225,8 +227,9 @@ class HostsInfo():
             return self._hosts[host]
         return None
     
-    def createInfoForHostIfNotExists(self, host):
+    def createInfoForHostIfNotExists(self, host:str):
         if not self.hostExists(host):
+            logging.info(f"Creating INFO for host {host}")
             self._hosts[host] = HostInfo(host)
     
     def getCrawledResourcesPerHost(self) -> str:
