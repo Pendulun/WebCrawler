@@ -1,3 +1,4 @@
+import logging
 import urllib3
 import certifi
 
@@ -26,11 +27,13 @@ class WebAccesser():
         raise AttributeError("lastResponse is not directly writable")
 
     def _getCustomPoolManager(self):
-        customRetries = urllib3.Retry(3, redirect=10)
+        customRetries = urllib3.util.Retry(connect=2, read=3, redirect=10)
+        timeout = urllib3.util.Timeout(connect=2.0, read=7.0)
         return urllib3.PoolManager(
                                     retries=customRetries,
                                     cert_reqs='CERT_REQUIRED',
-                                    ca_certs=certifi.where()
+                                    ca_certs=certifi.where(),
+                                    timeout=timeout
                                 )
     
     def GETRequest(self, link:str):
@@ -43,9 +46,8 @@ class WebAccesser():
             return None
     
     def lastRequestSuccess(self) -> bool:
-        SUCCESS_FIRST_CHAR = "s"
         if self._lastResponse != None:
-            return str(self._lastResponse.status)[0] == SUCCESS_FIRST_CHAR
+            return self._lastResponse.status >= 200 and self._lastResponse.status < 300 
         else:
             return False
     
@@ -55,4 +57,4 @@ class WebAccesser():
         if self._lastResponse == None:
             return False
         else:
-            return self._lastResponse.headers['content-type'] == 'text/html'
+            return 'text/html' in self._lastResponse.headers['content-type']
