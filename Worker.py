@@ -143,11 +143,14 @@ class Worker():
 
             if self._workersPipeline.allDone:
                 logging.info("Terminou Operações")
-                logging.info(f"SUCCESS PAGES: {len(self._successPages)}\n{self._successPages}")
-                logging.info(f"ERRORS PAGES:{len(self._someErrorPages)}\n{self._someErrorPages}")
+                # logging.info(f"SUCCESS PAGES: {len(self._successPages)}\n{self._successPages}")
+                # logging.info(f"ERRORS PAGES:{len(self._someErrorPages)}\n{self._someErrorPages}")
                 allWorkersFinished = True
             else:
                 self._tryToCompleteWithReceivedLinks()
+        
+        self._workersPipeline.setSaiu(self._id)
+        logging.info(f"SAIRAM: {self._workersPipeline.getSairam()}")
 
     def _crawlUntilItCan(self, htmlParser:Parser.HTMLParser, webAccess:WebAccesser):
         
@@ -239,7 +242,6 @@ class Worker():
             logging.exception(f"Some error occurred whe requesting {completeLink}")
             self._someErrorPages.add(completeLink)
         else:
-            logging.info(f"Fez requisição com sucesso para:\n{completeLink}")
 
             if webAccess.lastRequestSuccess() and webAccess.lastResponseHasTextHtmlContent():
                 

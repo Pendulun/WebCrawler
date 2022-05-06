@@ -27,14 +27,21 @@ class WorkersPipeline():
 
         self._workerWaitingLinksEvent = {}
         self._workerWaitingLinksEventLock = Lock()
+
+        self._sairam = dict()
+        self._sairamLock = Lock()
         for workerId in list(self._workers.keys()):
             self._workerToWorkerLink[workerId] = deque()
             self._workerToWorkerLock[workerId] = Lock()
 
             self._workerWaitingLinks[workerId] = False
             self._workerWaitingLinksEvent[workerId] = Event()
+
+            self._sairam[workerId] = False
         
         self._allDone = False
+        self._allDoneLock = Lock()
+        
             
     @property
     def numWorkers(self) -> int:
@@ -54,7 +61,10 @@ class WorkersPipeline():
     
     @property
     def allDone(self) -> bool:
-        return self._allDone
+        self._allDoneLock.acquire()
+        allDone = self._allDone
+        self._allDoneLock.release()
+        return allDone
     
     @allDone.setter
     def allDone(self, newAllDone):
@@ -187,6 +197,7 @@ class WorkersPipeline():
         
         #I think that I dont need to acquire a lock
         #to run this line
+        logging.info("WAITING")
         self._workerWaitingLinksEvent[workerId].wait()
         logging.info("SAIU DO WAIT")
         self._unsetWorkerWaiting(workerId)
@@ -233,3 +244,14 @@ class WorkersPipeline():
             linkByHost[workerId].append(url)
         
         return linkByHost
+    
+    def setSaiu(self, workerId:int):
+        self._sairamLock.acquire()
+        self._sairam[workerId] = True
+        self._sairamLock.release()
+    
+    def getSairam(self):
+        self._sairamLock.acquire()
+        sairamString = f"{self._sairam}"
+        self._sairamLock.release()
+        return sairamString

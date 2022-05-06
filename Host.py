@@ -229,7 +229,6 @@ class HostsInfo():
     
     def createInfoForHostIfNotExists(self, host:str):
         if not self.hostExists(host):
-            logging.info(f"Creating INFO for host {host}")
             self._hosts[host] = HostInfo(host)
     
     def getCrawledResourcesPerHost(self) -> str:
