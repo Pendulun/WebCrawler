@@ -14,7 +14,7 @@ class HTMLParser():
         raise AttributeError("parsedHTML is not directly writable")
         
     def parse(self, html:str):
-        self._parsedHTML = BeautifulSoup(html)
+        self._parsedHTML = BeautifulSoup(html, features="html.parser")
     
     def getAllLinksFromParsedHTML(self) -> set:
         
@@ -30,15 +30,16 @@ class HTMLParser():
         formatedUrls = set()
 
         for url in urls:
-            if url[0] != "#":
-                formatedUrl = ""
+            if url != None and url.strip() != "":
+                if url[0] != "#":
+                    formatedUrl = ""
 
-                if url[0] == "/":
-                    formatedUrl = f"{host}{url}"
-                elif (len(url) >= 4 and url[:4] == "http") or (len(url) >= 5 and url[:5] == "https"):
-                    formatedUrl = url
+                    if url[0] == "/":
+                        formatedUrl = f"{host}{url}"
+                    elif (len(url) >= 4 and url[:4] == "http") or (len(url) >= 5 and url[:5] == "https"):
+                        formatedUrl = url
 
-                if(formatedUrl != ""):
-                    formatedUrls.add(formatedUrl)
+                    if(formatedUrl != ""):
+                        formatedUrls.add(formatedUrl)
         
         return formatedUrls
