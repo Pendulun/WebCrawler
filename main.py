@@ -1,7 +1,8 @@
-import sys
+from timeit import default_timer as timer
 from Crawler import Crawler
-import utils
 import logging
+import utils
+import sys
 
 class UndefinedCommandError(Exception):
     pass
@@ -63,7 +64,7 @@ def getConfigDictTemplate():
 
 if __name__ == "__main__":
     
-    logging.basicConfig(level=logging.DEBUG, format='%(thread)d-%(threadName)s-%(levelname)s-%(message)s')
+    logging.basicConfig(level=logging.INFO, format='%(thread)d-%(threadName)s-%(levelname)s-%(message)s')
 
     MINNUMARGS = 5
 
@@ -80,9 +81,13 @@ if __name__ == "__main__":
             utils.printErrorMessageAndExitWithErrorCode(e, 1)
         else:
             logging.info(f"Todos o comandos foram aceitos {configs}")
-            NUMWORKERS = 1
+            NUMWORKERS = 10
             myCrawler = Crawler(configs['LIMIT'], NUMWORKERS)
             try:
+                start = timer()
                 myCrawler.startCrawlingFromSeedsFile(configs['seedPathFile'])
+                end = timer()
+                logging.info(f"Elapsed Time: {end - start}")
+                logging.info(f"Num Of Pages Crawled : {myCrawler.pagesCrawled}")
             except FileNotFoundError as e:
                 utils.printErrorMessageAndExitWithErrorCode(e, 1)
