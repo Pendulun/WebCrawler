@@ -1,10 +1,8 @@
-from queue import PriorityQueue
-from collections import deque
-import utils
 from Worker import Worker
 from WorkersPipeline import WorkersPipeline
 import threading
 import logging
+import utils
     
 class Crawler():
     """
@@ -18,7 +16,6 @@ class Crawler():
         for (_, worker) in self._workersQueues.items():
             worker.workersPipeline = self._workersPipeline 
 
-        self._pagesCrawled = 0
         self._pagesLimit = pagesCrawledLimit
         self._numWorkers = numWorkers
     
@@ -50,9 +47,9 @@ class Crawler():
         self._pagesLimit = newPagesLimit
     
     @property
-    def pagesCrawled(self):
+    def pagesCrawled(self) -> int:
         """The number of pages already crawled"""
-        raise AttributeError("pagesQueue is not readable or writable")
+        return self._workersPipeline.pagesCrawled
     
     @pagesCrawled.setter
     def pagesCrawled(self, newValue):
