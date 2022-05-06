@@ -1,14 +1,14 @@
 from urllib3.exceptions import NewConnectionError, TimeoutError, MaxRetryError
-from threading import Lock, Condition
 from WorkersPipeline import WorkersPipeline
 from WebAccesser import WebAccesser
-from collections import deque
+import datetime
 from queue import PriorityQueue
 from reppy import Robots
 import Host
 import Parser
 import utils
 import logging
+import time
 
 
 class UnwantedPagesHeuristics():
@@ -48,6 +48,9 @@ class Worker():
 
         #All hosts discovered with their policies
         self._hostsInfo = Host.HostsInfo()
+
+        self._successPages = set()
+        self._someErrorPages = set()
     
     @property
     def id(self) -> int:
@@ -125,7 +128,7 @@ class Worker():
             self._hostsQueue.put((priority, host))
 
     def crawl(self):
-        logging.info(f"Hello from Thread {self._id}")
+        logging.info("HELLO")
 
         allWorkersFinished = False
         htmlParser = Parser.HTMLParser()
@@ -140,6 +143,8 @@ class Worker():
 
             if self._workersPipeline.allDone:
                 logging.info("Terminou Operações")
+                logging.info(f"SUCCESS PAGES: {len(self._successPages)}\n{self._successPages}")
+                logging.info(f"ERRORS PAGES:{len(self._someErrorPages)}\n{self._someErrorPages}")
                 allWorkersFinished = True
             else:
                 self._tryToCompleteWithReceivedLinks()
@@ -150,20 +155,23 @@ class Worker():
         CHECK_FOR_OTHER_LINKS_EVERY_NUM_REQUESTS = 15
 
         while self._hasLinkToRequest() and not self._workersPipeline.maxNumPagesReached():
-
-            completeLink = self._getNextLinkToRequest()
+            
+            completeLink, minTimestampToReq = self._getNextLinkAndMinTimestampToRequest()
             currHostWithSchema = utils.getHostWithSchemaOfLink(completeLink)
             hostInfo = self._hostsInfo.getHostInfo(currHostWithSchema)
 
             self._requestForRobotsOfHostIfNecessary(hostInfo)
 
             if self._shouldAccessPage(completeLink, hostInfo):
-                self._accessPageAndGetLinks(htmlParser, webAccess, completeLink, hostInfo)
+                
+                self._waitMinDelayIfNecessary(minTimestampToReq)
 
-                self._workersPipeline.addNumPagesCrawled(1)
+                self._accessPageAndGetLinks(htmlParser, webAccess, completeLink, hostInfo)
 
                 if not hostInfo.emptyOfResources():
                     self._addHostToRequest(hostInfo.hostNameWithSchema, hostInfo.nextRequestAllowedTimestampFromNow())
+            else:
+                logging.info(f"should not access page {completeLink}")
 
             hostInfo.markResourceAsCrawled(utils.getResourcesFromLink(completeLink))
             shouldCheckForOtherLinksCount+=1
@@ -171,15 +179,24 @@ class Worker():
             if shouldCheckForOtherLinksCount == CHECK_FOR_OTHER_LINKS_EVERY_NUM_REQUESTS:
                 self._tryToCompleteWithReceivedLinks()
                 shouldCheckForOtherLinksCount = 0
+
+    def _waitMinDelayIfNecessary(self, minTimestampToReq):
+        now = datetime.datetime.now()
+        minTimeToWait = datetime.datetime.fromtimestamp(minTimestampToReq)
+
+        if minTimeToWait > now:
+            timeDiff = minTimeToWait - now
+            time.sleep(timeDiff.total_seconds())
+            logging.info(f"ESPEROU {timeDiff.total_seconds()} segundos")
     
     def _hasLinkToRequest(self) -> bool:
         return not self._hostsQueue.empty()
     
-    def _getNextLinkToRequest(self):
-        nextHost = self._getNextHostToRequest()
+    def _getNextLinkAndMinTimestampToRequest(self):
+        minTimestamp, nextHost = self._getNextHostToRequest()
         nextHostResource = self._getNextResourceToRequestOfHost(nextHost)
-        completeLink = self._getLinkFrom(nextHost, nextHostResource)
-        return completeLink
+        completeLink = utils.getCompleteLinkFromHostAndResource(nextHost, nextHostResource)
+        return completeLink, minTimestamp
     
     def _getNextHostToRequest(self) -> str:
         return self._hostsQueue.get()
@@ -187,16 +204,12 @@ class Worker():
     def _getNextResourceToRequestOfHost(self, host:str) -> str:
         hostInfo = self._hostsInfo.getHostInfo(host)
         return hostInfo.getNextResource()
-    
-    def _getLinkFrom(self, nextHost:str, nextHostResource:str) -> str:
-        link = f"{nextHost}/{nextHostResource}"
-        return link
 
     def _requestForRobotsOfHostIfNecessary(self, hostInfo:Host.HostInfo):
         if not hostInfo.hasRobots():
             hostInfo.tryFirstAccessToRobots()
             #talvez desnecessário
-            hostInfo.saveLinksFromSitemapIfPossible()
+            #hostInfo.saveLinksFromSitemapIfPossible()
     
     def _shouldAccessPage(self, completeLink:str, hostInfo:Host.HostInfo) -> bool:
 
@@ -220,24 +233,30 @@ class Worker():
             
         except MaxRetryError as e:
             logging.exception(f"Max Retries reached ERROR for: {completeLink}")
+            self._someErrorPages.add(completeLink)
 
         except Exception as e:
             logging.exception(f"Some error occurred whe requesting {completeLink}")
-
+            self._someErrorPages.add(completeLink)
         else:
             logging.info(f"Fez requisição com sucesso para:\n{completeLink}")
 
             if webAccess.lastRequestSuccess() and webAccess.lastResponseHasTextHtmlContent():
+                
+                #SE FOR DEBUG, IMPRIMIR COISAS
 
-                #Se for debug, imprimir coisas
+                self._successPages.add(completeLink)
                 
                 treatedUrls = self._getAllLinksFromPage(htmlParser, webAccess, currHostWithSchema)
 
                 self._distributeUrlsToWorkers(treatedUrls)
 
+                self._workersPipeline.addNumPagesCrawled(1)
+                
+
     def _getAllLinksFromPage(self, htmlPageParser:Parser.HTMLParser, webAccess:WebAccesser, currHostWithSchema:str):
         httpResponse = webAccess.lastResponseText()
-        htmlPageParser.parse(httpResponse.data)
+        htmlPageParser.parse(httpResponse)
         urlsFound = htmlPageParser.getAllLinksFromParsedHTML()
         treatedUrls = htmlPageParser.formatUrlsWithHostIfNeeded(urlsFound, currHostWithSchema)
         return treatedUrls
@@ -254,7 +273,7 @@ class Worker():
     def _tryToCompleteWithReceivedLinks(self):
         
         linksWorkersSentToMe = self._workersPipeline.getLinksSentToWorker(self._id)
-            
+
         while len(linksWorkersSentToMe) > 0:
             newLink = linksWorkersSentToMe.popleft()
             self.addLinkToRequest(newLink)

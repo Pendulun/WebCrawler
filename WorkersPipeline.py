@@ -14,8 +14,9 @@ class WorkersPipeline():
 
         self._pagesCrawledLock = Lock()
         self._numPagesCrawled = 0
-        self._maxNumPagesCrawled = maxNumPagesCrawled
+        self._maxNumPagesToCrawl = maxNumPagesCrawled
         self._maxPagesCrawledEvent = Event()
+        self._maxPagesCrawledEventLock = Lock()
         
         self._workerToWorkerLink = {}
         self._workerToWorkerLock = {}
@@ -96,19 +97,25 @@ class WorkersPipeline():
         self._numPagesCrawled += numPagesCrawled
 
         #Passou ou chegou no limite, define que é para parar
-        if self._maxNumPagesCrawled():
+        if self._crawledMaxNumPages():
+            logging.info(f"ATINGIU MAX PAGES")
+            self._maxPagesCrawledEventLock.acquire()
             self._maxPagesCrawledEvent.set()
+            self._maxPagesCrawledEventLock.release()
 
         self._pagesCrawledLock.release()
     
-    def _maxNumPagesCrawled(self) -> bool:
-        return self._numPagesCrawled >= self._maxNumPagesCrawled
+    def _crawledMaxNumPages(self) -> bool:
+        return self._numPagesCrawled >= self._maxNumPagesToCrawl
     
     def maxNumPagesReached(self) -> bool:
-        return self._maxPagesCrawledEvent.is_set()
+        self._maxPagesCrawledEventLock.acquire()
+        isSet = self._maxPagesCrawledEvent.is_set()
+        self._maxPagesCrawledEventLock.release()
+        return isSet
 
     def getLinksSentToWorker(self, workerId:int) -> deque:
-        receivedLinksLock = self._getWorkerToWorkerLockOfWorker(self._id)
+        receivedLinksLock = self._getWorkerToWorkerLockOfWorker(workerId)
         receivedLinksLock.acquire()
         self._workerWaitingLinksEventLock.acquire()
         
@@ -141,21 +148,27 @@ class WorkersPipeline():
             if hostWithSchema not in list(hostsToLinksMap.keys()):
                 hostsToLinksMap[hostWithSchema] = set()
             
-            hostsToLinksMap[hostWithSchema] = resource
+            hostsToLinksMap[hostWithSchema].add(resource)
         return hostsToLinksMap
     
     def _sendResourcesToWorkers(self, hostsAndResourcesToWorkerMap:dict):
         for workerId, mappedLinks in hostsAndResourcesToWorkerMap.items():
             if len(mappedLinks) > 0:
+                #mappedLinks is a list of tuples
+                #each tuple has a host as a first value and a set of resources of that
+                #host as a second value
                 workerLock = self._getWorkerToWorkerLockOfWorker(workerId)
 
                 workerLock.acquire()
-                logging.info(f"Worker Pipeline colocando elementos na fila do Worker {workerId}")
-                workerLinkDeque = self._workerToWorkerLink[workerId]
-                for link in mappedLinks:
-                    workerLinkDeque.append(link)
+                for hostAndResources in mappedLinks:
+                    workerLinkDeque = self._workerToWorkerLink[workerId]
+                    currHost = hostAndResources[0]
+                    resourcesOfHost = hostAndResources[1]
+                    for resource in resourcesOfHost:
+                        
+                        completeLink = utils.getCompleteLinkFromHostAndResource(currHost, resource)
+                        workerLinkDeque.append(completeLink)                    
                
-                #Avisa worker que ele recebeu link
                 self._signalWorkerReceivedLinkEvent(workerId)
                 workerLock.release()
 
@@ -175,6 +188,7 @@ class WorkersPipeline():
         #I think that I dont need to acquire a lock
         #to run this line
         self._workerWaitingLinksEvent[workerId].wait()
+        logging.info("SAIU DO WAIT")
         self._unsetWorkerWaiting(workerId)
     
     def _setWorkerWaiting(self, workerId:int):
@@ -187,12 +201,16 @@ class WorkersPipeline():
         everyWorkerWaiting = all([waiting for _, waiting in self._workerWaitingLinks.items()])
         aWorkerSentLinksToAnother = any([event.is_set() for _, event in self._workerWaitingLinksEvent.items()])
 
+        if everyWorkerWaiting and not aWorkerSentLinksToAnother:
+            logging.info("Percebeu que todos esperando e ninguém enviou mais")
+
         if self.maxNumPagesReached():
             logging.info("Percebeu que já atingiu o máximo de requests com sucesso!")
 
         timeToStop = self.maxNumPagesReached() or (everyWorkerWaiting and not aWorkerSentLinksToAnother)
 
         if timeToStop:
+            logging.info("TIME TO STOP")
             self._allDone = True
             self._wakeEveryWorkerToDie()
         
@@ -212,6 +230,6 @@ class WorkersPipeline():
             hostWithSchema = utils.getHostWithSchemaOfLink(url)
             workerId = utils.threadOfHost(self._numWorkers, hostWithSchema)
 
-            linkByHost[workerId] = url
+            linkByHost[workerId].append(url)
         
         return linkByHost
