@@ -34,3 +34,7 @@ def getResourcesFromLink(link: str) -> str:
 
 def threadOfHost(numThreads:int, host:str) -> int:
     return abs(hash(host)%numThreads)
+
+def getCompleteLinkFromHostAndResource(host:str, resource:str) -> str:
+        completeLink = f"{host}{resource}"
+        return completeLink
