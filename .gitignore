@@ -2,3 +2,5 @@ pa1
 pa1-linux
 **__pycache__/
 log.log
+results*
+test*
