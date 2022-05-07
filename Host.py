@@ -1,5 +1,6 @@
 import datetime
 import logging
+import WebAccesser
 from reppy import Robots
 from collections import deque
 
@@ -108,16 +109,13 @@ class HostInfo():
         else:
             return self._robots.agent(HostInfo.AGENTNAME).delay
 
-    def tryFirstAccessToRobots(self):
-        hostRobotsPath = Robots.robots_url(self._hostNameWithSchema)
-        try:
-            MAX_TIME_REQ_FOR_ROBOTS = 10.0
-            hostRobots = Robots.fetch(hostRobotsPath, timeout=MAX_TIME_REQ_FOR_ROBOTS)
-        except:
-            self._robots = None
+    def tryFirstAccessToRobots(self, webAccess:WebAccesser.WebAccesser = None):
+        if webAccess == None:
+            webAccess = WebAccesser.WebAccesser()
+        
+        self._robots = webAccess.getRobotsOf(self._hostNameWithSchema)
+        if self._robots == None:
             self._couldNotAccessRobots = True
-        else:
-            self._robots = hostRobots
 
     def nextRequestAllowedTimestampFromNow(self):
         now = datetime.datetime.now()
