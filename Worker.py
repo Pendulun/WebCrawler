@@ -3,7 +3,6 @@ from WorkersPipeline import WorkersPipeline
 from WebAccesser import WebAccesser
 import datetime
 from queue import PriorityQueue
-from reppy import Robots
 import Host
 import Parser
 import utils
@@ -160,6 +159,7 @@ class Worker():
         while self._hasLinkToRequest() and not self._workersPipeline.maxNumPagesReached():
             
             completeLink, minTimestampToReq = self._getNextLinkAndMinTimestampToRequest()
+            logging.info(f"Link atual {completeLink}")
             currHostWithSchema = utils.getHostWithSchemaOfLink(completeLink)
             hostInfo = self._hostsInfo.getHostInfo(currHostWithSchema)
 
@@ -188,7 +188,9 @@ class Worker():
         minTimeToWait = datetime.datetime.fromtimestamp(minTimestampToReq)
 
         if minTimeToWait > now:
+            
             timeDiff = minTimeToWait - now
+            logging.info(f"Waiting delay {timeDiff.total_seconds()}")
             time.sleep(timeDiff.total_seconds())
             logging.info(f"ESPEROU {timeDiff.total_seconds()} segundos")
     
@@ -211,8 +213,6 @@ class Worker():
     def _requestForRobotsOfHostIfNecessary(self, hostInfo:Host.HostInfo):
         if not hostInfo.hasRobots():
             hostInfo.tryFirstAccessToRobots()
-            #talvez desnecessário
-            #hostInfo.saveLinksFromSitemapIfPossible()
     
     def _shouldAccessPage(self, completeLink:str, hostInfo:Host.HostInfo) -> bool:
 
@@ -239,7 +239,7 @@ class Worker():
             self._someErrorPages.add(completeLink)
 
         except Exception as e:
-            logging.exception(f"Some error occurred whe requesting {completeLink}")
+            logging.exception(f"Some error occurred while requesting {completeLink}")
             self._someErrorPages.add(completeLink)
         else:
 
