@@ -1,12 +1,17 @@
+from warcio.statusandheaders import StatusAndHeaders
+from warcio.warcwriter import WARCWriter
 from threading import Lock, Event
 from collections import deque
 import logging
+import urllib3
 import utils
 
 class WorkersPipeline():
     """
     This represents the object that the workers use to communicate to eachother
     """
+
+    MAX_RESULTS_PER_WARC_FILE = 1000
 
     def __init__(self, workers:dict, maxNumPagesCrawled:int):
         self._workers = workers
@@ -19,30 +24,36 @@ class WorkersPipeline():
         self._maxPagesCrawledEventLock = Lock()
         
         self._workerToWorkerLink = {}
-        self._workerToWorkerLock = {}
+        self._workerToWorkerLocks = {}
 
-        # https://docs.python.org/3/library/threading.html#condition-objects
         self._workerWaitingLinks = {}
-        self._workerWaitingLinksDictLock = Lock()
+        self._workerWaitingLinksLock = Lock()
 
-        self._workerWaitingLinksEvent = {}
-        self._workerWaitingLinksEventLock = Lock()
+        self._numWorkersWaiting = 0
+        self._numWorkersWaitingLock = Lock()
 
-        self._sairam = dict()
-        self._sairamLock = Lock()
+        self._workerWaitingLinksEvents = {}
+        self._workerWaitingLinksEventsLocks = {}
+
+        self._workersThatGotOut = dict()
+        self._workersThatGotOutLock = Lock()
         for workerId in list(self._workers.keys()):
             self._workerToWorkerLink[workerId] = deque()
-            self._workerToWorkerLock[workerId] = Lock()
+            self._workerToWorkerLocks[workerId] = Lock()
 
             self._workerWaitingLinks[workerId] = False
-            self._workerWaitingLinksEvent[workerId] = Event()
+            self._workerWaitingLinksEvents[workerId] = Event()
+            self._workerWaitingLinksEventsLocks[workerId] = Lock()
 
-            self._sairam[workerId] = False
+            self._workersThatGotOut[workerId] = False
         
         self._allDone = False
         self._allDoneLock = Lock()
-        
-            
+
+        self._warcOutputFilePreName = "results"
+        self._warcOutputFileExtensions = ".warc.gz"
+        self._currWarcFileId = 0
+
     @property
     def numWorkers(self) -> int:
         return self._numWorkers
@@ -101,44 +112,22 @@ class WorkersPipeline():
     @workerWaitingLinks.setter
     def workerWaitingLinks(self, newWorkerWaitingLinks):
         raise AttributeError("workerWaitingLinks is not readable or writable")
-    
-    def addNumPagesCrawled(self, numPagesCrawled:int):
-        self._pagesCrawledLock.acquire()
-        self._numPagesCrawled += numPagesCrawled
-
-        #Passou ou chegou no limite, define que é para parar
-        if self._crawledMaxNumPages():
-            logging.info(f"ATINGIU MAX PAGES")
-            self._maxPagesCrawledEventLock.acquire()
-            self._maxPagesCrawledEvent.set()
-            self._maxPagesCrawledEventLock.release()
-
-        self._pagesCrawledLock.release()
-    
-    def _crawledMaxNumPages(self) -> bool:
-        return self._numPagesCrawled >= self._maxNumPagesToCrawl
-    
-    def maxNumPagesReached(self) -> bool:
-        self._maxPagesCrawledEventLock.acquire()
-        isSet = self._maxPagesCrawledEvent.is_set()
-        self._maxPagesCrawledEventLock.release()
-        return isSet
 
     def getLinksSentToWorker(self, workerId:int) -> deque:
         receivedLinksLock = self._getWorkerToWorkerLockOfWorker(workerId)
         receivedLinksLock.acquire()
-        self._workerWaitingLinksEventLock.acquire()
+        self._workerWaitingLinksEventsLocks[workerId].acquire()
         
         linksReceived = self._workerToWorkerLink[workerId]
-        self._workerWaitingLinksEvent[workerId].clear()
+        self._workerWaitingLinksEvents[workerId].clear()
 
-        self._workerWaitingLinksEventLock.release()
+        self._workerWaitingLinksEventsLocks[workerId].release()
         receivedLinksLock.release()
 
         return linksReceived
     
     def _getWorkerToWorkerLockOfWorker(self, workerId:int) -> Lock:
-        return self._workerToWorkerLock[workerId]
+        return self._workerToWorkerLocks[workerId]
     
     def sendLinksToProperWorkers(self, linksByWorker:dict):
         hostsAndResourcesToWorkerMap = dict()
@@ -183,39 +172,39 @@ class WorkersPipeline():
                 self._signalWorkerReceivedLinkEvent(workerId)
 
     def _signalWorkerReceivedLinkEvent(self, workerId):
-        self._workerWaitingLinksEventLock.acquire()
-        self._workerWaitingLinksEvent[workerId].set()
-        self._workerWaitingLinksEventLock.release()
+        self._workerWaitingLinksEventsLocks[workerId].acquire()
+        self._workerWaitingLinksEvents[workerId].set()
+        self._workerWaitingLinksEventsLocks[workerId].release()
         
     def _unsetWorkerWaiting(self, workerId:int):
-        self._workerWaitingLinksDictLock.acquire()
+        self._workerWaitingLinksLock.acquire()
+        self._numWorkersWaitingLock.acquire()
         self._workerWaitingLinks[workerId] = False
-        self._workerWaitingLinksDictLock.release()
+        self._numWorkersWaiting -= 1
+        self._numWorkersWaitingLock.release()
+        self._workerWaitingLinksLock.release()
 
     def waitForLinkOrAllDoneEvent(self, workerId:int):
         self._setWorkerWaiting(workerId)
         
         #I think that I dont need to acquire a lock
         #to run this line
-        self._workerWaitingLinksEvent[workerId].wait()
+        self._workerWaitingLinksEvents[workerId].wait()
         self._unsetWorkerWaiting(workerId)
     
     def _setWorkerWaiting(self, workerId:int):
         
-        self._workerWaitingLinksDictLock.acquire()
-        self._workerWaitingLinksEventLock.acquire()
+        self._workerWaitingLinksLock.acquire()
+        self._numWorkersWaitingLock.acquire()
+        self._workerWaitingLinksEventsLocks[workerId].acquire()
+        #[lock.acquire() for _, lock in self._workerWaitingLinksEventsLocks.items()]
+        #self._workerWaitingLinksEventsLocks.acquire()
 
         self._workerWaitingLinks[workerId] = True
 
-        everyWorkerWaiting = all([waiting for _, waiting in self._workerWaitingLinks.items()])
-        aWorkerSentLinksToAnother = any([event.is_set() for _, event in self._workerWaitingLinksEvent.items()])
-
-        if everyWorkerWaiting and not aWorkerSentLinksToAnother:
-            #This will only be logged if there are no more links discovered
-            logging.info("Percebeu que todos esperando e ninguém enviou mais")
-
-        if self.maxNumPagesReached():
-            logging.info("Percebeu que já atingiu o máximo de requests com sucesso!")
+        #everyWorkerWaiting = all([waiting for _, waiting in self._workerWaitingLinks.items()])
+        everyWorkerWaiting = self._numWorkersWaiting == self._numWorkers
+        aWorkerSentLinksToAnother = any([event.is_set() for _, event in self._workerWaitingLinksEvents.items()])
 
         timeToStop = self.maxNumPagesReached() or (everyWorkerWaiting and not aWorkerSentLinksToAnother)
 
@@ -224,11 +213,19 @@ class WorkersPipeline():
             self._allDone = True
             self._wakeEveryWorkerToDie()
         
-        self._workerWaitingLinksEventLock.release()
-        self._workerWaitingLinksDictLock.release()
+        #[lock.release() for _, lock in self._workerWaitingLinksEventsLocks.items()]
+        self._workerWaitingLinksEventsLocks[workerId].release()
+        self._numWorkersWaitingLock.release()
+        self._workerWaitingLinksLock.release()
+    
+    def maxNumPagesReached(self) -> bool:
+        self._maxPagesCrawledEventLock.acquire()
+        isSet = self._maxPagesCrawledEvent.is_set()
+        self._maxPagesCrawledEventLock.release()
+        return isSet
     
     def _wakeEveryWorkerToDie(self):
-        return [event.set() for _, event in self._workerWaitingLinksEvent.items()]
+        return [event.set() for _, event in self._workerWaitingLinksEvents.items()]
     
     def separateLinksByWorker(self, urls:set) -> dict:
         linkByHost = dict()
@@ -245,12 +242,57 @@ class WorkersPipeline():
         return linkByHost
     
     def setSaiu(self, workerId:int):
-        self._sairamLock.acquire()
-        self._sairam[workerId] = True
-        self._sairamLock.release()
+        self._workersThatGotOutLock.acquire()
+        self._workersThatGotOut[workerId] = True
+        self._workersThatGotOutLock.release()
     
     def getSairam(self):
-        self._sairamLock.acquire()
-        sairamString = f"{self._sairam}"
-        self._sairamLock.release()
+        self._workersThatGotOutLock.acquire()
+        sairamString = f"{self._workersThatGotOut}"
+        self._workersThatGotOutLock.release()
         return sairamString
+    
+    def saveResponse(self, response: urllib3.response.HTTPResponse, link:str):
+
+        self._pagesCrawledLock.acquire()
+        
+        self._addNumPagesCrawled(1)
+        warcFileOutputName = self._getCurrWarcOutputFileName()
+        
+        self._pagesCrawledLock.release()
+
+        self._saveOnWarcFile(response, link, warcFileOutputName)
+
+    def _saveOnWarcFile(self, response: urllib3.response.HTTPResponse, link:str, warcFileOutputName:str):
+        with open(warcFileOutputName, 'wb') as output:
+            writer = WARCWriter(output, gzip=True)
+
+            headers_list = response.getheaders().items()
+
+            http_headers = StatusAndHeaders(str(response.status), headers_list, protocol='HTTP/1.0')
+
+            record = writer.create_warc_record(link, 'response', payload=response,
+                                                http_headers=http_headers)
+
+            writer.write_record(record)
+        
+    def _getCurrWarcOutputFileName(self) -> str:
+        return f"{self._warcOutputFilePreName}{self._currWarcFileId}{self._warcOutputFileExtensions}"
+
+    def _addNumPagesCrawled(self, numPagesCrawled:int):
+        
+        self._numPagesCrawled += numPagesCrawled
+
+        shouldSaveOnNewWarcFile = self._numPagesCrawled % WorkersPipeline.MAX_RESULTS_PER_WARC_FILE == 0
+        if shouldSaveOnNewWarcFile :
+            self._currWarcFileId +=1
+
+        #Passou ou chegou no limite, define que é para parar
+        if self._crawledMaxNumPages():
+            logging.info(f"ATINGIU MAX PAGES")
+            self._maxPagesCrawledEventLock.acquire()
+            self._maxPagesCrawledEvent.set()
+            self._maxPagesCrawledEventLock.release()
+    
+    def _crawledMaxNumPages(self) -> bool:
+        return self._numPagesCrawled >= self._maxNumPagesToCrawl

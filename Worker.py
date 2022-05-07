@@ -1,14 +1,13 @@
 from urllib3.exceptions import NewConnectionError, TimeoutError, MaxRetryError
 from WorkersPipeline import WorkersPipeline
 from WebAccesser import WebAccesser
-import datetime
 from queue import PriorityQueue
-import Host
+import datetime
+import logging
 import Parser
 import utils
-import logging
 import time
-
+import Host
 
 class UnwantedPagesHeuristics():
     UNWANTEDDOCTYPESTHREECHARS = set(["pdf", "csv", "png", "svg", "jpg", "gif", "raw","cr2",
@@ -240,12 +239,13 @@ class Worker():
             if webAccess.lastRequestSuccess() and webAccess.lastResponseHasTextHtmlContent():
                 
                 #SE FOR DEBUG, IMPRIMIR COISAS
+
+                response = webAccess.lastResponse
+                self._workersPipeline.saveResponse(response, completeLink)
                 
                 treatedUrls = self._getAllLinksFromPage(htmlParser, webAccess, currHostWithSchema)
 
                 self._distributeUrlsToWorkers(treatedUrls)
-
-                self._workersPipeline.addNumPagesCrawled(1)
                 
 
     def _getAllLinksFromPage(self, htmlPageParser:Parser.HTMLParser, webAccess:WebAccesser, currHostWithSchema:str):
