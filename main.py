@@ -64,7 +64,8 @@ def getConfigDictTemplate():
 
 if __name__ == "__main__":
     
-    logging.basicConfig(level=logging.INFO, format='%(thread)d-%(threadName)s-%(levelname)s-%(message)s')
+    logging.basicConfig(level=logging.INFO, format='%(thread)d-%(threadName)s-%(levelname)s-%(message)s',
+    filename="log.log", filemode="w")
 
     MINNUMARGS = 5
 
