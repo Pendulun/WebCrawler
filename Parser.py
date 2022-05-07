@@ -1,6 +1,6 @@
-from bs4 import BeautifulSoup
-from url_normalize import url_normalize
 from charset_normalizer import from_bytes
+from bs4 import BeautifulSoup
+import utils
 
 class HTMLParser():
     
@@ -43,6 +43,6 @@ class HTMLParser():
                         formatedUrl = url
 
                     if(formatedUrl != ""):
-                        formatedUrls.add(url_normalize(formatedUrl))
+                        formatedUrls.add(utils.normalizeLinkIfCan(formatedUrl))
         
         return formatedUrls

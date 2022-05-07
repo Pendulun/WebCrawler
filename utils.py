@@ -14,10 +14,19 @@ def getHostAndResourcesFromLink(link:str):
     return host, resources
 
 def getHostWithSchemaAndResourcesFromLink(link:str):
-    normalizedLink = url_normalize(link)
+    normalizedLink = normalizeLinkIfCan(link)
     hostWithSchema = getHostWithSchemaOfLink(normalizedLink)
     resources = getResourcesFromLink(normalizedLink)
     return hostWithSchema, resources
+
+def normalizeLinkIfCan(link:str) -> str:
+    newLink = ""
+    try:
+        newLink = url_normalize(link)
+    except:
+        newLink = link
+    
+    return newLink
 
 def getHostOfLink(link:str) -> str:
     """
@@ -27,8 +36,13 @@ def getHostOfLink(link:str) -> str:
     return link.split("/")[2]
 
 def getHostWithSchemaOfLink(link:str) -> str:
-    schemaAndHostParts = link.split("/")[:3]
-    schemaAndHost = f"{schemaAndHostParts[0]}//{schemaAndHostParts[2]}"
+    schemaAndHost = ""
+    try:
+        schemaAndHostParts = link.split("/")[:3]
+        schemaAndHost = f"{schemaAndHostParts[0]}//{schemaAndHostParts[2]}"
+    except Exception as e:
+        logging.exception(f"ERROR for link {link}:\n{e}")
+
     return schemaAndHost
 
 def getResourcesFromLink(link: str) -> str:
