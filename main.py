@@ -67,6 +67,8 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(thread)d-%(threadName)s-%(levelname)s-%(message)s',
     filename="log.log", filemode="w")
 
+    #logging.disable(logging.CRITICAL)
+
     MINNUMARGS = 5
 
     if len(sys.argv) < MINNUMARGS:
@@ -76,19 +78,17 @@ if __name__ == "__main__":
         configs = dict()
         try:
             configs = getConfigFromArgs(VALIDCOMMANDS)
-        except UndefinedCommandError as e:
-            utils.printErrorMessageAndExitWithErrorCode(e, 1)
-        except ArgsWrongTypeError as e:
+        except (UndefinedCommandError, ArgsWrongTypeError) as e:
             utils.printErrorMessageAndExitWithErrorCode(e, 1)
         else:
             logging.info(f"Todos o comandos foram aceitos {configs}")
-            NUMWORKERS = 10
+            NUMWORKERS = 20
             myCrawler = Crawler(configs['LIMIT'], NUMWORKERS)
             try:
                 start = timer()
                 myCrawler.startCrawlingFromSeedsFile(configs['seedPathFile'])
                 end = timer()
-                logging.info(f"Elapsed Time: {end - start}")
-                logging.info(f"Num Of Pages Crawled : {myCrawler.pagesCrawled}")
+                print(f"Elapsed Time: {end - start}")
+                print(f"Num Of Pages Crawled : {myCrawler.pagesCrawled}")
             except FileNotFoundError as e:
                 utils.printErrorMessageAndExitWithErrorCode(e, 1)
