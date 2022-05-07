@@ -1,7 +1,7 @@
-from collections import deque
-import utils
 from threading import Lock, Event
+from collections import deque
 import logging
+import utils
 
 class WorkersPipeline():
     """
@@ -179,8 +179,8 @@ class WorkersPipeline():
                         completeLink = utils.getCompleteLinkFromHostAndResource(currHost, resource)
                         workerLinkDeque.append(completeLink)                    
                
-                self._signalWorkerReceivedLinkEvent(workerId)
                 workerLock.release()
+                self._signalWorkerReceivedLinkEvent(workerId)
 
     def _signalWorkerReceivedLinkEvent(self, workerId):
         self._workerWaitingLinksEventLock.acquire()
@@ -197,9 +197,7 @@ class WorkersPipeline():
         
         #I think that I dont need to acquire a lock
         #to run this line
-        logging.info("WAITING")
         self._workerWaitingLinksEvent[workerId].wait()
-        logging.info("SAIU DO WAIT")
         self._unsetWorkerWaiting(workerId)
     
     def _setWorkerWaiting(self, workerId:int):
@@ -213,6 +211,7 @@ class WorkersPipeline():
         aWorkerSentLinksToAnother = any([event.is_set() for _, event in self._workerWaitingLinksEvent.items()])
 
         if everyWorkerWaiting and not aWorkerSentLinksToAnother:
+            #This will only be logged if there are no more links discovered
             logging.info("Percebeu que todos esperando e ninguém enviou mais")
 
         if self.maxNumPagesReached():
