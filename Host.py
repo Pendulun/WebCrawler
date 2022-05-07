@@ -2,8 +2,6 @@ import datetime
 import logging
 from reppy import Robots
 from collections import deque
-import requests
-from bs4 import BeautifulSoup
 
 class HostInfo():
     
@@ -113,75 +111,13 @@ class HostInfo():
     def tryFirstAccessToRobots(self):
         hostRobotsPath = Robots.robots_url(self._hostNameWithSchema)
         try:
-            hostRobots = Robots.fetch(hostRobotsPath)
+            MAX_TIME_REQ_FOR_ROBOTS = 10.0
+            hostRobots = Robots.fetch(hostRobotsPath, timeout=MAX_TIME_REQ_FOR_ROBOTS)
         except:
             self._robots = None
             self._couldNotAccessRobots = True
         else:
             self._robots = hostRobots
-    
-    def saveLinksFromSitemapIfPossible(self):
-        if self.hasRobots():
-            sitemapListOnRobots = self._robots.sitemaps
-
-            if len(sitemapListOnRobots) > 0:
-                
-                firstSitemap = sitemapListOnRobots[0]
-                allLinksFound = self._findMaxLinksPossible(firstSitemap)
-
-                self.addResources(allLinksFound)
-    
-    def _findMaxLinksPossible(self, sitemapLink:str) -> list:
-        sitemapPage = requests.get(sitemapLink)
-        sitemapXml = sitemapPage.text
-        sitemapSoup = BeautifulSoup(sitemapXml, features="html.parser")
-
-        pagesInThisSitemap = self._findPagesOnSitemapSoup(sitemapSoup)
-        pagesInInnerSitemaps = self._findLinksFromInnerSitemaps(sitemapSoup)
-
-        allLinksFound = list() 
-        allLinksFound.extend(pagesInThisSitemap)
-        allLinksFound.extend(pagesInInnerSitemaps)
-    
-    def _findLinksFromInnerSitemaps(self, firstSitemapSoup) -> list:
-
-        linkToPagesFound = list()
-        sitemapTags = firstSitemapSoup.find_all("sitemap") 
-        if len(sitemapTags) > 0:
-            
-            otherSitemaps = list()    
-            for innerSitemap in sitemapTags:
-                otherSitemaps.append(innerSitemap.findNext("loc").text)
-
-            if len(otherSitemaps) > HostInfo.MAXNUMINNERSITEMAPSCRAWLABLE:
-                otherSitemaps = otherSitemaps[:HostInfo.MAXNUMINNERSITEMAPSCRAWLABLE]
-                     
-            linkToPagesFound.extend(self._findLinksOnSitemaps(otherSitemaps))
-        
-        return linkToPagesFound
-
-    def _findLinksOnSitemaps(self, sitemapsList:list) -> list:
-        linksFound = list()
-
-        for sitemapLink in sitemapsList:
-            sitemapPage = requests.get(sitemapLink)
-            sitemapXML = sitemapPage.text
-
-            sitemapSoup = BeautifulSoup(sitemapXML)
-            linksFound = self._findPagesOnSitemapSoup(sitemapSoup)
-            linksFound.extend(linksFound)
-        
-        return linksFound
-    
-    def _findPagesOnSitemapSoup(self, sitemapSoup):
-        linksToPagesFound = list()
-        pageLinksFound = sitemapSoup.find_all("url")
-
-        for page in pageLinksFound:
-            pageLink = page.findNext("loc").text
-            linksToPagesFound.append(pageLink)
-        
-        return linksToPagesFound
 
     def nextRequestAllowedTimestampFromNow(self):
         now = datetime.datetime.now()
