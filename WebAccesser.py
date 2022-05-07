@@ -1,6 +1,7 @@
 import logging
 import urllib3
 import certifi
+import reppy
 
 class WebAccesser():
 
@@ -36,11 +37,25 @@ class WebAccesser():
                                     timeout=timeout
                                 )
     
+    def getRobotsOf(self, url:str) -> reppy.Robots:
+        hostRobotsPath = reppy.Robots.robots_url(url)
+
+        hostRobots = None
+        MAX_TIME_REQ_FOR_ROBOTS = 10.0
+        try:
+            hostRobots = reppy.Robots.fetch(hostRobotsPath, 
+                                            timeout=MAX_TIME_REQ_FOR_ROBOTS,
+                                            headers=WebAccesser.REQ_HEADERS)
+        except:
+            hostRobots = None
+        
+        return hostRobots
+
     def GETRequest(self, link:str):
         logging.info(f"REQUESTING {link}")
         self._lastResponse = self._poolManager.request('GET', link, headers=WebAccesser.REQ_HEADERS)
     
-    def lastResponseText(self) -> str:
+    def lastResponseTextBytes(self) -> bytes:
         if self._lastResponse != None:
             return self._lastResponse.data
         else:
@@ -58,4 +73,4 @@ class WebAccesser():
         if self._lastResponse == None:
             return False
         else:
-            return 'text/html' in self._lastResponse.headers['content-type']
+            return 'text/html' in self._lastResponse.getheader('content-type', "")
