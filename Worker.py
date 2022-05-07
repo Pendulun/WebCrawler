@@ -47,9 +47,6 @@ class Worker():
 
         #All hosts discovered with their policies
         self._hostsInfo = Host.HostsInfo()
-
-        self._successPages = set()
-        self._someErrorPages = set()
     
     @property
     def id(self) -> int:
@@ -149,7 +146,7 @@ class Worker():
                 self._tryToCompleteWithReceivedLinks()
         
         self._workersPipeline.setSaiu(self._id)
-        logging.info(f"SAIRAM: {self._workersPipeline.getSairam()}")
+        logging.info(f"SAIRAM:\n{self._workersPipeline.getSairam()}")
 
     def _crawlUntilItCan(self, htmlParser:Parser.HTMLParser, webAccess:WebAccesser):
         
@@ -159,11 +156,10 @@ class Worker():
         while self._hasLinkToRequest() and not self._workersPipeline.maxNumPagesReached():
             
             completeLink, minTimestampToReq = self._getNextLinkAndMinTimestampToRequest()
-            logging.info(f"Link atual {completeLink}")
             currHostWithSchema = utils.getHostWithSchemaOfLink(completeLink)
             hostInfo = self._hostsInfo.getHostInfo(currHostWithSchema)
 
-            self._requestForRobotsOfHostIfNecessary(hostInfo)
+            self._requestForRobotsOfHostIfNecessary(hostInfo, webAccess)
 
             if self._shouldAccessPage(completeLink, hostInfo):
                 
@@ -210,9 +206,9 @@ class Worker():
         hostInfo = self._hostsInfo.getHostInfo(host)
         return hostInfo.getNextResource()
 
-    def _requestForRobotsOfHostIfNecessary(self, hostInfo:Host.HostInfo):
+    def _requestForRobotsOfHostIfNecessary(self, hostInfo:Host.HostInfo, webAcess:WebAccesser):
         if not hostInfo.hasRobots():
-            hostInfo.tryFirstAccessToRobots()
+            hostInfo.tryFirstAccessToRobots(webAcess)
     
     def _shouldAccessPage(self, completeLink:str, hostInfo:Host.HostInfo) -> bool:
 
@@ -236,18 +232,14 @@ class Worker():
             
         except MaxRetryError as e:
             logging.exception(f"Max Retries reached ERROR for: {completeLink}")
-            self._someErrorPages.add(completeLink)
 
         except Exception as e:
             logging.exception(f"Some error occurred while requesting {completeLink}")
-            self._someErrorPages.add(completeLink)
         else:
 
             if webAccess.lastRequestSuccess() and webAccess.lastResponseHasTextHtmlContent():
                 
                 #SE FOR DEBUG, IMPRIMIR COISAS
-
-                self._successPages.add(completeLink)
                 
                 treatedUrls = self._getAllLinksFromPage(htmlParser, webAccess, currHostWithSchema)
 
@@ -257,8 +249,8 @@ class Worker():
                 
 
     def _getAllLinksFromPage(self, htmlPageParser:Parser.HTMLParser, webAccess:WebAccesser, currHostWithSchema:str):
-        httpResponse = webAccess.lastResponseText()
-        htmlPageParser.parse(httpResponse)
+        httpResponseTextBytes = webAccess.lastResponseTextBytes()
+        htmlPageParser.parse(httpResponseTextBytes)
         urlsFound = htmlPageParser.getAllLinksFromParsedHTML()
         treatedUrls = htmlPageParser.formatUrlsWithHostIfNeeded(urlsFound, currHostWithSchema)
         return treatedUrls
