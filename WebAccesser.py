@@ -20,8 +20,8 @@ class WebAccesser():
         raise AttributeError("poolManager is not directly writable")
     
     @property
-    def lastResponse(self):
-        raise AttributeError("lastResponse is not directly readable")
+    def lastResponse(self) -> urllib3.response.HTTPResponse:
+        return self._lastResponse
     
     @lastResponse.setter
     def lastResponse(self, newPool):
@@ -67,8 +67,6 @@ class WebAccesser():
         else:
             return False
     
-    #httpResponse é do tipo urllib3.response.HTTPResponse
-    #https://urllib3.readthedocs.io/en/stable/reference/urllib3.response.html?highlight=HTTPResponse#urllib3.response.HTTPResponse
     def lastResponseHasTextHtmlContent(self) -> bool:
         if self._lastResponse == None:
             return False
