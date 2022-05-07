@@ -1,4 +1,6 @@
 from bs4 import BeautifulSoup
+from url_normalize import url_normalize
+from charset_normalizer import from_bytes
 
 class HTMLParser():
     
@@ -14,6 +16,7 @@ class HTMLParser():
         raise AttributeError("parsedHTML is not directly writable")
         
     def parse(self, html:str):
+        html = str(from_bytes(html).best())
         self._parsedHTML = BeautifulSoup(html, features="html.parser")
     
     def getAllLinksFromParsedHTML(self) -> set:
@@ -40,6 +43,6 @@ class HTMLParser():
                         formatedUrl = url
 
                     if(formatedUrl != ""):
-                        formatedUrls.add(formatedUrl)
+                        formatedUrls.add(url_normalize(formatedUrl))
         
         return formatedUrls
