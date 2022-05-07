@@ -1,4 +1,5 @@
 import logging
+from url_normalize import url_normalize
 
 def printErrorMessageAndExitWithErrorCode(exceptionRaised: Exception, errorCode: int):
     printJoinedErrorMessage(exceptionRaised)
@@ -13,8 +14,9 @@ def getHostAndResourcesFromLink(link:str):
     return host, resources
 
 def getHostWithSchemaAndResourcesFromLink(link:str):
-    hostWithSchema = getHostWithSchemaOfLink(link)
-    resources = getResourcesFromLink(link)
+    normalizedLink = url_normalize(link)
+    hostWithSchema = getHostWithSchemaOfLink(normalizedLink)
+    resources = getResourcesFromLink(normalizedLink)
     return hostWithSchema, resources
 
 def getHostOfLink(link:str) -> str:
