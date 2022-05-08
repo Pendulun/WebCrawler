@@ -2,6 +2,7 @@ from urllib3.exceptions import NewConnectionError, TimeoutError, MaxRetryError
 from WorkersPipeline import WorkersPipeline
 from WebAccesser import WebAccesser
 from queue import PriorityQueue
+from bs4 import BeautifulSoup
 import datetime
 import logging
 import Parser
@@ -126,13 +127,12 @@ class Worker():
         logging.info("HELLO")
 
         allWorkersFinished = False
-        htmlParser = Parser.HTMLParser()
         webAccess = WebAccesser()
 
         
         while not allWorkersFinished:
 
-            self._crawlUntilItCan(htmlParser, webAccess)
+            self._crawlUntilItCan(webAccess)
             
             self._workersPipeline.waitForLinkOrAllDoneEvent(self._id)
 
@@ -147,7 +147,7 @@ class Worker():
         self._workersPipeline.setSaiu(self._id)
         logging.info(f"SAIRAM:\n{self._workersPipeline.getSairam()}")
 
-    def _crawlUntilItCan(self, htmlParser:Parser.HTMLParser, webAccess:WebAccesser):
+    def _crawlUntilItCan(self, webAccess:WebAccesser):
         
         shouldCheckForOtherLinksCount = 0
         CHECK_FOR_OTHER_LINKS_EVERY_NUM_REQUESTS = 15
@@ -164,7 +164,7 @@ class Worker():
                 
                 self._waitMinDelayIfNecessary(minTimestampToReq)
 
-                self._accessPageAndGetLinks(htmlParser, webAccess, completeLink, hostInfo)
+                self._accessPageAndGetLinks(webAccess, completeLink, hostInfo)
 
                 if not hostInfo.emptyOfResources():
                     self._addHostToRequest(hostInfo.hostNameWithSchema, hostInfo.nextRequestAllowedTimestampFromNow())
@@ -217,42 +217,42 @@ class Worker():
 
         return allowed and passHeuristics
 
-    def _accessPageAndGetLinks(self, htmlParser:Parser.HTMLParser, webAccess:WebAccesser, completeLink:str, hostInfo:Host.HostInfo):
+    def _accessPageAndGetLinks(self, webAccess:WebAccesser, requestLink:str, hostInfo:Host.HostInfo):
         currHostWithSchema = hostInfo.hostNameWithSchema
 
         try:
-            webAccess.GETRequest(completeLink)
+            webAccess.GETRequest(requestLink)
         except (TimeoutError, NewConnectionError) as e:
-            logging.exception(f"Erro de conexão com {completeLink}. Recolocando na fila para tentar de novo")
+            logging.exception(f"Erro de conexão com {requestLink}. Recolocando na fila para tentar de novo")
             
             #Add the same link again for retry later
             #as might have had internet problems
-            self.addLinkToRequest(completeLink)
+            self.addLinkToRequest(requestLink)
             
         except MaxRetryError as e:
-            logging.exception(f"Max Retries reached ERROR for: {completeLink}")
+            logging.exception(f"Max Retries reached ERROR for: {requestLink}")
 
         except Exception as e:
-            logging.exception(f"Some error occurred while requesting {completeLink}")
+            logging.exception(f"Some error occurred while requesting {requestLink}")
         else:
 
             if webAccess.lastRequestSuccess() and webAccess.lastResponseHasTextHtmlContent():
                 
-                #SE FOR DEBUG, IMPRIMIR COISAS
+                parsedHTML = Parser.HTMLParser.parseHTMLBytes(webAccess.lastResponseTextBytes())
 
-                response = webAccess.lastResponse
-                self._workersPipeline.saveResponse(response, completeLink)
-                
-                treatedUrls = self._getAllLinksFromPage(htmlParser, webAccess, currHostWithSchema)
+                treatedUrls = self._getTreatedLinksFromPage(parsedHTML, currHostWithSchema)
 
                 self._distributeUrlsToWorkers(treatedUrls)
-                
 
-    def _getAllLinksFromPage(self, htmlPageParser:Parser.HTMLParser, webAccess:WebAccesser, currHostWithSchema:str):
-        httpResponseTextBytes = webAccess.lastResponseTextBytes()
-        htmlPageParser.parse(httpResponseTextBytes)
-        urlsFound = htmlPageParser.getAllLinksFromParsedHTML()
-        treatedUrls = htmlPageParser.formatUrlsWithHostIfNeeded(urlsFound, currHostWithSchema)
+                response = webAccess.lastResponse
+                self._workersPipeline.saveResponse(response, requestLink)
+                
+                reqTimestamp = webAccess.lastRequestTimestamp
+                self._workersPipeline.printIfOnDebugMode(requestLink, reqTimestamp,parsedHTML)
+
+    def _getTreatedLinksFromPage(self, parsedHTML:BeautifulSoup, currHostWithSchema:str):
+        urlsFound = Parser.HTMLParser.getAllLinksFromParsedHTML(parsedHTML)
+        treatedUrls = Parser.HTMLParser.formatUrlsWithHostIfNeeded(urlsFound, currHostWithSchema)
         return treatedUrls
 
     def _distributeUrlsToWorkers(self, treatedUrls):

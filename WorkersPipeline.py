@@ -2,9 +2,12 @@ from warcio.statusandheaders import StatusAndHeaders
 from warcio.warcwriter import WARCWriter
 from threading import Lock, Event
 from collections import deque
+from bs4 import BeautifulSoup
 import logging
 import urllib3
+from Parser import HTMLParser
 import utils
+import json
 
 class WorkersPipeline():
     """
@@ -13,9 +16,12 @@ class WorkersPipeline():
 
     MAX_RESULTS_PER_WARC_FILE = 1000
 
-    def __init__(self, workers:dict, maxNumPagesCrawled:int):
+    def __init__(self, workers:dict, maxNumPagesCrawled:int, debug:bool=False):
         self._workers = workers
         self._numWorkers = len(list(workers.keys()))
+        
+        self._debugMode = debug
+        self._printLock = Lock()
 
         self._pagesCrawledLock = Lock()
         self._numPagesCrawled = 0
@@ -53,6 +59,7 @@ class WorkersPipeline():
         self._warcOutputFilePreName = "results"
         self._warcOutputFileExtensions = ".warc.gz"
         self._currWarcFileId = 0
+        self._warcFileLock = Lock()
 
     @property
     def numWorkers(self) -> int:
@@ -262,9 +269,17 @@ class WorkersPipeline():
         self._pagesCrawledLock.release()
 
         self._saveOnWarcFile(response, link, warcFileOutputName)
+    
+    def printIfOnDebugMode(self,  link:str, reqTimestamp:float, parsedHTML:BeautifulSoup):
+        if self._debugMode:
+            NUM_WORDS_TO_PRINT = 20
+            textToPrint = HTMLParser.getNFirstTextWords(parsedHTML, NUM_WORDS_TO_PRINT)
+            title = parsedHTML.find('title').string
+            self._printJson(link, reqTimestamp, title, textToPrint)
 
     def _saveOnWarcFile(self, response: urllib3.response.HTTPResponse, link:str, warcFileOutputName:str):
-        with open(warcFileOutputName, 'wb') as output:
+        self._warcFileLock.acquire()
+        with open(warcFileOutputName, 'ab') as output:
             writer = WARCWriter(output, gzip=True)
 
             headers_list = response.getheaders().items()
@@ -275,6 +290,19 @@ class WorkersPipeline():
                                                 http_headers=http_headers)
 
             writer.write_record(record)
+        
+        self._warcFileLock.release()
+    
+    def _printJson(self, link:str, timestamp:float, title:str, text:str):
+        jsonOut = {"URL": link,
+                    "Title": title,
+                    "Text": text,
+                    "Timestamp":timestamp}
+        
+        self._printLock.acquire()
+        #https://stackoverflow.com/a/18337754/16264901
+        print(json.dumps(jsonOut, ensure_ascii=False).encode('utf8').decode())
+        self._printLock.release()
         
     def _getCurrWarcOutputFileName(self) -> str:
         return f"{self._warcOutputFilePreName}{self._currWarcFileId}{self._warcOutputFileExtensions}"

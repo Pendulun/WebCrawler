@@ -1,27 +1,19 @@
 from charset_normalizer import from_bytes
 from bs4 import BeautifulSoup
+from bs4.element import Comment
 import utils
 
 class HTMLParser():
     
-    def __init__(self):
-        self._parsedHTML = None
-
-    @property
-    def parsedHTML(self):
-        raise AttributeError("parsedHTML is not directly readable")
-
-    @parsedHTML.setter
-    def parsedHTML(self, newParsedHTML):
-        raise AttributeError("parsedHTML is not directly writable")
-        
-    def parse(self, html:str):
+    @staticmethod
+    def parseHTMLBytes(html:str) -> BeautifulSoup:
         html = str(from_bytes(html).best())
-        self._parsedHTML = BeautifulSoup(html, features="html.parser")
+        return BeautifulSoup(html, features="html.parser")
     
-    def getAllLinksFromParsedHTML(self) -> set:
+    @staticmethod
+    def getAllLinksFromParsedHTML(parsedHTML:BeautifulSoup) -> set:
         
-        allAnchorsFound = self._parsedHTML.find_all("a")
+        allAnchorsFound = parsedHTML.find_all("a")
 
         urlsFound = set()
         for anchorTag in allAnchorsFound:
@@ -29,7 +21,8 @@ class HTMLParser():
         
         return urlsFound
     
-    def formatUrlsWithHostIfNeeded(self, urls, host:str) -> set:
+    @staticmethod
+    def formatUrlsWithHostIfNeeded(urls, host:str) -> set:
         formatedUrls = set()
 
         for url in urls:
@@ -46,3 +39,29 @@ class HTMLParser():
                         formatedUrls.add(utils.normalizeLinkIfCan(formatedUrl))
         
         return formatedUrls
+
+    @staticmethod
+    def getNFirstTextWords(parsedHTML: BeautifulSoup, numWords:int) -> str:
+        allText = HTMLParser.getVisibleTextFromParsedHtml(parsedHTML)
+        splitedText = allText.split()
+        if len(splitedText) < numWords:
+            return " ".join(splitedText)
+        else:
+            return " ".join(splitedText[:numWords])
+    
+    @staticmethod
+    def getVisibleTextFromParsedHtml(parsedHTML: BeautifulSoup) -> str:
+        """
+        https://stackoverflow.com/a/1983219/16264901
+        """
+        texts = parsedHTML.findAll(text=True)
+        visible_texts = filter(HTMLParser.tag_visible, texts)  
+        return " ".join(text.strip() for text in visible_texts)
+    
+    @staticmethod
+    def tag_visible(element):
+        if element.parent.name in ['style', 'script', 'head', 'title', 'meta', '[document]']:
+            return False
+        if isinstance(element, Comment):
+            return False
+        return True

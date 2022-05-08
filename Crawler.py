@@ -8,10 +8,10 @@ class Crawler():
     """
     This is the crawler. It manages all workers to crawl pages until the limit is reached
     """
-    def __init__(self, pagesCrawledLimit:int, numWorkers:int =1):
+    def __init__(self, pagesCrawledLimit:int, numWorkers:int = 1, debugMode:bool = False):
         
         self._workersQueues = {workerId:Worker(workerId) for workerId in range(numWorkers)}
-        self._workersPipeline = WorkersPipeline(self._workersQueues, pagesCrawledLimit)
+        self._workersPipeline = WorkersPipeline(self._workersQueues, pagesCrawledLimit, debugMode)
 
         for (_, worker) in self._workersQueues.items():
             worker.workersPipeline = self._workersPipeline 

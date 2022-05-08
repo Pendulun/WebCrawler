@@ -1,3 +1,4 @@
+import datetime
 import logging
 import urllib3
 import certifi
@@ -10,6 +11,7 @@ class WebAccesser():
     def __init__(self):
         self._poolManager = self._getCustomPoolManager()
         self._lastResponse = None
+        self._lastRequestTimestamp = 0.0
     
     @property
     def poolManager(self):
@@ -18,6 +20,14 @@ class WebAccesser():
     @poolManager.setter
     def poolManager(self, newPool):
         raise AttributeError("poolManager is not directly writable")
+
+    @property
+    def lastRequestTimestamp(self) -> float:
+        return self._lastRequestTimestamp
+    
+    @lastRequestTimestamp.setter
+    def lastRequestTimestamp(self, newLastRequestTimestamp):
+        raise AttributeError("lastRequestTimestamp is not directly writable")
     
     @property
     def lastResponse(self) -> urllib3.response.HTTPResponse:
@@ -53,6 +63,8 @@ class WebAccesser():
 
     def GETRequest(self, link:str):
         logging.info(f"REQUESTING {link}")
+        now = datetime.datetime.now()
+        self._lastRequestTimestamp = datetime.datetime.timestamp(now)
         self._lastResponse = self._poolManager.request('GET', link, headers=WebAccesser.REQ_HEADERS)
     
     def lastResponseTextBytes(self) -> bytes:
