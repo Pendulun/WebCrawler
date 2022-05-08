@@ -32,9 +32,6 @@ class WorkersPipeline():
         self._workerToWorkerLink = {}
         self._workerToWorkerLocks = {}
 
-        self._workerWaitingLinks = {}
-        self._workerWaitingLinksLock = Lock()
-
         self._numWorkersWaiting = 0
         self._numWorkersWaitingLock = Lock()
 
@@ -47,7 +44,6 @@ class WorkersPipeline():
             self._workerToWorkerLink[workerId] = deque()
             self._workerToWorkerLocks[workerId] = Lock()
 
-            self._workerWaitingLinks[workerId] = False
             self._workerWaitingLinksEvents[workerId] = Event()
             self._workerWaitingLinksEventsLocks[workerId] = Lock()
 
@@ -184,12 +180,9 @@ class WorkersPipeline():
         self._workerWaitingLinksEventsLocks[workerId].release()
         
     def _unsetWorkerWaiting(self, workerId:int):
-        self._workerWaitingLinksLock.acquire()
         self._numWorkersWaitingLock.acquire()
-        self._workerWaitingLinks[workerId] = False
         self._numWorkersWaiting -= 1
         self._numWorkersWaitingLock.release()
-        self._workerWaitingLinksLock.release()
 
     def waitForLinkOrAllDoneEvent(self, workerId:int):
         self._setWorkerWaiting(workerId)
@@ -201,13 +194,12 @@ class WorkersPipeline():
     
     def _setWorkerWaiting(self, workerId:int):
         
-        self._workerWaitingLinksLock.acquire()
         self._numWorkersWaitingLock.acquire()
         self._workerWaitingLinksEventsLocks[workerId].acquire()
         #[lock.acquire() for _, lock in self._workerWaitingLinksEventsLocks.items()]
         #self._workerWaitingLinksEventsLocks.acquire()
 
-        self._workerWaitingLinks[workerId] = True
+        self._numWorkersWaiting += 1
 
         #everyWorkerWaiting = all([waiting for _, waiting in self._workerWaitingLinks.items()])
         everyWorkerWaiting = self._numWorkersWaiting == self._numWorkers
@@ -223,7 +215,6 @@ class WorkersPipeline():
         #[lock.release() for _, lock in self._workerWaitingLinksEventsLocks.items()]
         self._workerWaitingLinksEventsLocks[workerId].release()
         self._numWorkersWaitingLock.release()
-        self._workerWaitingLinksLock.release()
     
     def maxNumPagesReached(self) -> bool:
         self._maxPagesCrawledEventLock.acquire()
@@ -264,6 +255,7 @@ class WorkersPipeline():
         self._pagesCrawledLock.acquire()
         
         self._addNumPagesCrawled(1)
+        logging.info(f"NUM PAGES: {self._numPagesCrawled}")
         warcFileOutputName = self._getCurrWarcOutputFileName()
         
         self._pagesCrawledLock.release()
@@ -301,7 +293,7 @@ class WorkersPipeline():
         
         self._printLock.acquire()
         #https://stackoverflow.com/a/18337754/16264901
-        print(json.dumps(jsonOut, ensure_ascii=False).encode('utf8').decode())
+        print(json.dumps(jsonOut, ensure_ascii=False).encode('utf-8').decode())
         self._printLock.release()
         
     def _getCurrWarcOutputFileName(self) -> str:
