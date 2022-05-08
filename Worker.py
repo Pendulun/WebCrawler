@@ -124,12 +124,10 @@ class Worker():
             self._hostsQueue.put((priority, host))
 
     def crawl(self):
-        logging.info("HELLO")
 
         allWorkersFinished = False
         webAccess = WebAccesser()
 
-        
         while not allWorkersFinished:
 
             self._crawlUntilItCan(webAccess)
@@ -169,7 +167,8 @@ class Worker():
                 if not hostInfo.emptyOfResources():
                     self._addHostToRequest(hostInfo.hostNameWithSchema, hostInfo.nextRequestAllowedTimestampFromNow())
             else:
-                logging.info(f"should not access page {completeLink}")
+                #logging.info(f"should not access page {completeLink}")
+                pass
 
             hostInfo.markResourceAsCrawled(utils.getResourcesFromLink(completeLink))
             shouldCheckForOtherLinksCount+=1
@@ -222,18 +221,20 @@ class Worker():
 
         try:
             webAccess.GETRequest(requestLink)
-        except (TimeoutError, NewConnectionError) as e:
-            logging.exception(f"Erro de conexão com {requestLink}. Recolocando na fila para tentar de novo")
+        # except (TimeoutError, NewConnectionError) as e:
+        #     #logging.exception(f"Erro de conexão com {requestLink}. Recolocando na fila para tentar de novo")
             
-            #Add the same link again for retry later
-            #as might have had internet problems
-            self.addLinkToRequest(requestLink)
+        #     #Add the same link again for retry later
+        #     #as might have had internet problems
+        #     self.addLinkToRequest(requestLink)
             
         except MaxRetryError as e:
-            logging.exception(f"Max Retries reached ERROR for: {requestLink}")
+            #logging.exception(f"Max Retries reached ERROR for: {requestLink}")
+            pass
 
         except Exception as e:
-            logging.exception(f"Some error occurred while requesting {requestLink}")
+            #logging.exception(f"Some error occurred while requesting {requestLink}")
+            pass
         else:
 
             if webAccess.lastRequestSuccess() and webAccess.lastResponseHasTextHtmlContent():

@@ -12,6 +12,7 @@ class WebAccesser():
         self._poolManager = self._getCustomPoolManager()
         self._lastResponse = None
         self._lastRequestTimestamp = 0.0
+        logging.getLogger("urllib3").setLevel(logging.CRITICAL)
     
     @property
     def poolManager(self):
@@ -62,7 +63,7 @@ class WebAccesser():
         return hostRobots
 
     def GETRequest(self, link:str):
-        logging.info(f"REQUESTING {link}")
+        #logging.info(f"REQUESTING {link}")
         now = datetime.datetime.now()
         self._lastRequestTimestamp = datetime.datetime.timestamp(now)
         self._lastResponse = self._poolManager.request('GET', link, headers=WebAccesser.REQ_HEADERS)
