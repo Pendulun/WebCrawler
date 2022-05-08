@@ -28,7 +28,7 @@ class WebAccesser():
         raise AttributeError("lastResponse is not directly writable")
 
     def _getCustomPoolManager(self):
-        customRetries = urllib3.util.Retry(connect=1, read=2, redirect=5)
+        customRetries = urllib3.util.Retry(connect=1, read=1, redirect=5)
         timeout = urllib3.util.Timeout(connect=2.0, read=3.0)
         return urllib3.PoolManager(
                                     retries=customRetries,

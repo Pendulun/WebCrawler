@@ -67,7 +67,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(thread)d-%(threadName)s-%(levelname)s-%(message)s',
     filename="log.log", filemode="w")
 
-    #logging.disable(logging.CRITICAL)
+    logging.disable(logging.INFO)
 
     MINNUMARGS = 5
 
@@ -82,7 +82,8 @@ if __name__ == "__main__":
             utils.printErrorMessageAndExitWithErrorCode(e, 1)
         else:
             logging.info(f"Todos o comandos foram aceitos {configs}")
-            NUMWORKERS = 20
+
+            NUMWORKERS = 40
             myCrawler = Crawler(configs['LIMIT'], NUMWORKERS)
             try:
                 start = timer()
