@@ -26,20 +26,19 @@ class WorkersPipeline():
         self._numPagesCrawled = 0
         self._maxNumPagesToCrawl = maxNumPagesCrawled
         
-        self._workerToWorkerLink = {}
-        self._workerToWorkerLocks = {}
-
+        self._workerCommLinksRecv = {}
+        self._workersCommLocks = {}
         self._numWorkersWaiting = 0
         self._numWorkersWaitingLock = Lock()
-
         self._workerWaitingLinksEvents = {}
         self._workerWaitingLinksEventsLocks = {}
 
+        #For debugging purposes
         self._workersThatGotOut = dict()
         self._workersThatGotOutLock = Lock()
         for workerId in list(self._workers.keys()):
-            self._workerToWorkerLink[workerId] = deque()
-            self._workerToWorkerLocks[workerId] = Lock()
+            self._workerCommLinksRecv[workerId] = deque()
+            self._workersCommLocks[workerId] = Lock()
 
             self._workerWaitingLinksEvents[workerId] = Event()
             self._workerWaitingLinksEventsLocks[workerId] = Lock()
@@ -111,20 +110,19 @@ class WorkersPipeline():
         raise AttributeError("workerWaitingLinks is not readable or writable")
 
     def getLinksSentToWorker(self, workerId:int) -> deque:
-        receivedLinksLock = self._getWorkerToWorkerLockOfWorker(workerId)
+        receivedLinksLock = self._workersCommLocks[workerId]
         receivedLinksLock.acquire()
         self._workerWaitingLinksEventsLocks[workerId].acquire()
         
-        linksReceived = self._workerToWorkerLink[workerId]
+        linksReceived = self._workerCommLinksRecv[workerId].copy()
+        self._workerCommLinksRecv[workerId].clear()
+
         self._workerWaitingLinksEvents[workerId].clear()
 
         self._workerWaitingLinksEventsLocks[workerId].release()
         receivedLinksLock.release()
 
         return linksReceived
-    
-    def _getWorkerToWorkerLockOfWorker(self, workerId:int) -> Lock:
-        return self._workerToWorkerLocks[workerId]
     
     def sendLinksToProperWorkers(self, linksByWorker:dict):
         hostsAndResourcesToWorkerMap = dict()
@@ -153,11 +151,11 @@ class WorkersPipeline():
                 #mappedLinks is a list of tuples
                 #each tuple has a host as a first value and a set of resources of that
                 #host as a second value
-                workerLock = self._getWorkerToWorkerLockOfWorker(workerId)
+                workerLock = self._workersCommLocks[workerId]
 
                 workerLock.acquire()
                 for hostAndResources in mappedLinks:
-                    workerLinkDeque = self._workerToWorkerLink[workerId]
+                    workerLinkDeque = self._workerCommLinksRecv[workerId]
                     currHost = hostAndResources[0]
                     resourcesOfHost = hostAndResources[1]
                     for resource in resourcesOfHost:
@@ -179,26 +177,21 @@ class WorkersPipeline():
         self._numWorkersWaitingLock.release()
 
     def waitForLinkOrAllDoneEvent(self, workerId:int):
-        self._setWorkerWaiting(workerId)
+        self._setWorkerWaiting()
 
-        if self._shouldStop():
-            pass
-        else:
+        if not self._shouldStop():
             logging.info("Esperando")
             self._workerWaitingLinksEvents[workerId].wait()
             logging.info("Não esperando mais")
 
         self._unsetWorkerWaiting()
     
-    def _setWorkerWaiting(self, workerId:int):
-        
+    def _setWorkerWaiting(self):
         self._numWorkersWaitingLock.acquire()
         self._numWorkersWaiting += 1
         self._numWorkersWaitingLock.release()
 
     def _shouldStop(self):
-        
-        #self._workerWaitingLinksEventsLocks[workerId].acquire()
 
         self._numWorkersWaitingLock.acquire()
         everyWorkerWaiting = self._numWorkersWaiting == self._numWorkers
