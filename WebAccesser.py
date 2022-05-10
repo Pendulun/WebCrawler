@@ -3,6 +3,7 @@ import logging
 import urllib3
 import certifi
 import reppy
+import utils
 
 class WebAccesser():
 
@@ -49,7 +50,7 @@ class WebAccesser():
                                 )
     
     def getRobotsOf(self, url:str) -> reppy.Robots:
-        hostRobotsPath = reppy.Robots.robots_url(url)
+        hostRobotsPath = reppy.Robots.robots_url(utils.normalizeLinkIfCan(url))
 
         hostRobots = None
         MAX_TIME_REQ_FOR_ROBOTS = 10.0
