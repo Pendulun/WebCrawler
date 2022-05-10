@@ -1,11 +1,10 @@
-from warcio.statusandheaders import StatusAndHeaders
-from warcio.warcwriter import WARCWriter
+from WarcFileSave import WarcSaver
 from threading import Lock, Event
 from collections import deque
 from bs4 import BeautifulSoup
+from Parser import HTMLParser
 import logging
 import urllib3
-from Parser import HTMLParser
 import utils
 import json
 
@@ -23,11 +22,9 @@ class WorkersPipeline():
         self._debugMode = debug
         self._printLock = Lock()
 
-        self._pagesCrawledLock = Lock()
+        self._numPagesCrawledLock = Lock()
         self._numPagesCrawled = 0
         self._maxNumPagesToCrawl = maxNumPagesCrawled
-        self._maxPagesCrawledEvent = Event()
-        self._maxPagesCrawledEventLock = Lock()
         
         self._workerToWorkerLink = {}
         self._workerToWorkerLocks = {}
@@ -52,10 +49,7 @@ class WorkersPipeline():
         self._allDone = False
         self._allDoneLock = Lock()
 
-        self._warcOutputFilePreName = "results"
-        self._warcOutputFileExtensions = ".warc.gz"
-        self._currWarcFileId = 0
-        self._warcFileLock = Lock()
+        self._warcSaver = WarcSaver()
 
     @property
     def numWorkers(self) -> int:
@@ -174,53 +168,63 @@ class WorkersPipeline():
                 workerLock.release()
                 self._signalWorkerReceivedLinkEvent(workerId)
 
-    def _signalWorkerReceivedLinkEvent(self, workerId):
+    def _signalWorkerReceivedLinkEvent(self, workerId:int):
         self._workerWaitingLinksEventsLocks[workerId].acquire()
         self._workerWaitingLinksEvents[workerId].set()
         self._workerWaitingLinksEventsLocks[workerId].release()
         
-    def _unsetWorkerWaiting(self, workerId:int):
+    def _unsetWorkerWaiting(self):
         self._numWorkersWaitingLock.acquire()
         self._numWorkersWaiting -= 1
         self._numWorkersWaitingLock.release()
 
     def waitForLinkOrAllDoneEvent(self, workerId:int):
         self._setWorkerWaiting(workerId)
-        
-        #I think that I dont need to acquire a lock
-        #to run this line
-        self._workerWaitingLinksEvents[workerId].wait()
-        self._unsetWorkerWaiting(workerId)
+
+        if self._shouldStop():
+            pass
+        else:
+            logging.info("Esperando")
+            self._workerWaitingLinksEvents[workerId].wait()
+            logging.info("Não esperando mais")
+
+        self._unsetWorkerWaiting()
     
     def _setWorkerWaiting(self, workerId:int):
         
         self._numWorkersWaitingLock.acquire()
-        self._workerWaitingLinksEventsLocks[workerId].acquire()
-        #[lock.acquire() for _, lock in self._workerWaitingLinksEventsLocks.items()]
-        #self._workerWaitingLinksEventsLocks.acquire()
-
         self._numWorkersWaiting += 1
+        self._numWorkersWaitingLock.release()
 
-        #everyWorkerWaiting = all([waiting for _, waiting in self._workerWaitingLinks.items()])
+    def _shouldStop(self):
+        
+        #self._workerWaitingLinksEventsLocks[workerId].acquire()
+
+        self._numWorkersWaitingLock.acquire()
         everyWorkerWaiting = self._numWorkersWaiting == self._numWorkers
+        self._numWorkersWaitingLock.release()
+
+        [lock.acquire() for _, lock in self._workerWaitingLinksEventsLocks.items()]
         aWorkerSentLinksToAnother = any([event.is_set() for _, event in self._workerWaitingLinksEvents.items()])
 
-        timeToStop = self.maxNumPagesReached() or (everyWorkerWaiting and not aWorkerSentLinksToAnother)
+        self._numPagesCrawledLock.acquire()
+        shouldStop = self._crawledPassMaxNumPages() or (everyWorkerWaiting and not aWorkerSentLinksToAnother)
+        self._numPagesCrawledLock.release()
 
-        if timeToStop:
+        if shouldStop:
             logging.info("TIME TO STOP")
-            self._allDone = True
+            self.setAllDone()
             self._wakeEveryWorkerToDie()
+        else:
+            logging.info("SHOULD NOT STOP")
         
-        #[lock.release() for _, lock in self._workerWaitingLinksEventsLocks.items()]
-        self._workerWaitingLinksEventsLocks[workerId].release()
-        self._numWorkersWaitingLock.release()
-    
-    def maxNumPagesReached(self) -> bool:
-        self._maxPagesCrawledEventLock.acquire()
-        isSet = self._maxPagesCrawledEvent.is_set()
-        self._maxPagesCrawledEventLock.release()
-        return isSet
+        [lock.release() for _, lock in self._workerWaitingLinksEventsLocks.items()]
+        return shouldStop
+
+    def setAllDone(self):
+        self._allDoneLock.acquire()
+        self._allDone = True
+        self._allDoneLock.release()
     
     def _wakeEveryWorkerToDie(self):
         return [event.set() for _, event in self._workerWaitingLinksEvents.items()]
@@ -252,15 +256,23 @@ class WorkersPipeline():
     
     def saveResponse(self, response: urllib3.response.HTTPResponse, link:str):
 
-        self._pagesCrawledLock.acquire()
+        if self._warcSaver.save(response, link):
+            self._addPageCrawledAndSaved()
+    
+    def _addPageCrawledAndSaved(self):
         
-        self._addNumPagesCrawled(1)
+        self._numPagesCrawledLock.acquire()
+        self._numPagesCrawled += 1
         logging.info(f"NUM PAGES: {self._numPagesCrawled}")
-        warcFileOutputName = self._getCurrWarcOutputFileName()
         
-        self._pagesCrawledLock.release()
-
-        self._saveOnWarcFile(response, link, warcFileOutputName)
+        if self._crawledPassMaxNumPages():
+            logging.info(f"ATINGIU MAX PAGES")
+            self.setAllDone()
+        
+        self._numPagesCrawledLock.release()
+    
+    def _crawledPassMaxNumPages(self) -> bool:
+        return self._numPagesCrawled > self._maxNumPagesToCrawl
     
     def printIfOnDebugMode(self,  link:str, reqTimestamp:float, parsedHTML:BeautifulSoup):
         if self._debugMode:
@@ -268,22 +280,6 @@ class WorkersPipeline():
             textToPrint = HTMLParser.getNFirstTextWords(parsedHTML, NUM_WORDS_TO_PRINT)
             title = parsedHTML.find('title').string
             self._printJson(link, reqTimestamp, title, textToPrint)
-
-    def _saveOnWarcFile(self, response: urllib3.response.HTTPResponse, link:str, warcFileOutputName:str):
-        self._warcFileLock.acquire()
-        with open(warcFileOutputName, 'ab') as output:
-            writer = WARCWriter(output, gzip=True)
-
-            headers_list = response.getheaders().items()
-
-            http_headers = StatusAndHeaders(str(response.status), headers_list, protocol='HTTP/1.0')
-
-            record = writer.create_warc_record(link, 'response', payload=response,
-                                                http_headers=http_headers)
-
-            writer.write_record(record)
-        
-        self._warcFileLock.release()
     
     def _printJson(self, link:str, timestamp:float, title:str, text:str):
         jsonOut = {"URL": link,
@@ -293,26 +289,5 @@ class WorkersPipeline():
         
         self._printLock.acquire()
         #https://stackoverflow.com/a/18337754/16264901
-        print(json.dumps(jsonOut, ensure_ascii=False).encode('utf-8').decode())
+        print(json.dumps(jsonOut, ensure_ascii=False, indent='\t').encode('utf-8').decode())
         self._printLock.release()
-        
-    def _getCurrWarcOutputFileName(self) -> str:
-        return f"{self._warcOutputFilePreName}{self._currWarcFileId}{self._warcOutputFileExtensions}"
-
-    def _addNumPagesCrawled(self, numPagesCrawled:int):
-        
-        self._numPagesCrawled += numPagesCrawled
-
-        shouldSaveOnNewWarcFile = self._numPagesCrawled % WorkersPipeline.MAX_RESULTS_PER_WARC_FILE == 0
-        if shouldSaveOnNewWarcFile :
-            self._currWarcFileId +=1
-
-        #Passou ou chegou no limite, define que é para parar
-        if self._crawledMaxNumPages():
-            logging.info(f"ATINGIU MAX PAGES")
-            self._maxPagesCrawledEventLock.acquire()
-            self._maxPagesCrawledEvent.set()
-            self._maxPagesCrawledEventLock.release()
-    
-    def _crawledMaxNumPages(self) -> bool:
-        return self._numPagesCrawled >= self._maxNumPagesToCrawl
