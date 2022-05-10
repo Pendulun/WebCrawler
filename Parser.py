@@ -17,7 +17,9 @@ class HTMLParser():
 
         urlsFound = set()
         for anchorTag in allAnchorsFound:
-            urlsFound.add(anchorTag.get("href"))
+            href = anchorTag.get("href")
+            if href != None and href.strip() != "":
+                urlsFound.add(href.split()[0])
         
         return urlsFound
     
