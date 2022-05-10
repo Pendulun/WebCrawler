@@ -1,4 +1,5 @@
 from WarcFileSave import WarcSaver
+from DebugPrinter import JsonPrinter
 from threading import Lock, Event
 from collections import deque
 from bs4 import BeautifulSoup
@@ -6,7 +7,6 @@ from Parser import HTMLParser
 import logging
 import urllib3
 import utils
-import json
 
 class WorkersPipeline():
     """
@@ -20,7 +20,6 @@ class WorkersPipeline():
         self._numWorkers = len(list(workers.keys()))
         
         self._debugMode = debug
-        self._printLock = Lock()
 
         self._numPagesCrawledLock = Lock()
         self._numPagesCrawled = 0
@@ -49,6 +48,7 @@ class WorkersPipeline():
         self._allDoneLock = Lock()
 
         self._warcSaver = WarcSaver()
+        self._debugPrinter = JsonPrinter()
 
     @property
     def numWorkers(self) -> int:
@@ -272,15 +272,4 @@ class WorkersPipeline():
             NUM_WORDS_TO_PRINT = 20
             textToPrint = HTMLParser.getNFirstTextWords(parsedHTML, NUM_WORDS_TO_PRINT)
             title = parsedHTML.find('title').string
-            self._printJson(link, reqTimestamp, title, textToPrint)
-    
-    def _printJson(self, link:str, timestamp:float, title:str, text:str):
-        jsonOut = {"URL": link,
-                    "Title": title,
-                    "Text": text,
-                    "Timestamp":timestamp}
-        
-        self._printLock.acquire()
-        #https://stackoverflow.com/a/18337754/16264901
-        print(json.dumps(jsonOut, ensure_ascii=False, indent='\t').encode('utf-8').decode())
-        self._printLock.release()
+            self._debugPrinter.printJson(link, reqTimestamp, title, textToPrint)
