@@ -18,8 +18,14 @@ class UnwantedPagesHeuristics():
 
     @staticmethod
     def passHeuristicsAccess(url:str) -> bool:
-        passThreeChars = url[-3:] not in UnwantedPagesHeuristics.UNWANTEDDOCTYPESTHREECHARS
-        passFourChars = url[-4:] not in UnwantedPagesHeuristics.UNWANTEDDOCTYPESFOURCHARS
+        passThreeChars = True
+        passFourChars = True
+
+        if len(url) > 3:
+            passThreeChars = url[-3:] not in UnwantedPagesHeuristics.UNWANTEDDOCTYPESTHREECHARS
+        
+        if len(url) > 4:
+            passFourChars = url[-4:] not in UnwantedPagesHeuristics.UNWANTEDDOCTYPESFOURCHARS
 
         return all([passThreeChars, passFourChars])
 
@@ -150,7 +156,7 @@ class Worker():
         shouldCheckForOtherLinksCount = 0
         CHECK_FOR_OTHER_LINKS_EVERY_NUM_REQUESTS = 15
 
-        while self._hasLinkToRequest() and not self._workersPipeline.maxNumPagesReached():
+        while self._hasLinkToRequest() and not self._workersPipeline.allDone:
             
             completeLink, minTimestampToReq = self._getNextLinkAndMinTimestampToRequest()
             currHostWithSchema = utils.getHostWithSchemaOfLink(completeLink)
@@ -176,6 +182,8 @@ class Worker():
             if shouldCheckForOtherLinksCount == CHECK_FOR_OTHER_LINKS_EVERY_NUM_REQUESTS:
                 self._tryToCompleteWithReceivedLinks()
                 shouldCheckForOtherLinksCount = 0
+        
+        logging.info("FOI EMBORA")
 
     def _waitMinDelayIfNecessary(self, minTimestampToReq):
         now = datetime.datetime.now()
@@ -249,7 +257,7 @@ class Worker():
                 self._workersPipeline.saveResponse(response, requestLink)
                 
                 reqTimestamp = webAccess.lastRequestTimestamp
-                self._workersPipeline.printIfOnDebugMode(requestLink, reqTimestamp,parsedHTML)
+                self._workersPipeline.printIfOnDebugMode(requestLink, reqTimestamp, parsedHTML)
 
     def _getTreatedLinksFromPage(self, parsedHTML:BeautifulSoup, currHostWithSchema:str):
         urlsFound = Parser.HTMLParser.getAllLinksFromParsedHTML(parsedHTML)
