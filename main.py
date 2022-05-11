@@ -83,7 +83,7 @@ if __name__ == "__main__":
         else:
             logging.info(f"Todos o comandos foram aceitos {configs}")
 
-            NUMWORKERS = 10
+            NUMWORKERS = 110
             myCrawler = Crawler(configs['LIMIT'], NUMWORKERS, configs['debugMode'])
             try:
                 start = timer()

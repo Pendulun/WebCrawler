@@ -12,7 +12,7 @@ import Host
 
 class UnwantedPagesHeuristics():
     UNWANTEDDOCTYPESTHREECHARS = set(["pdf", "csv", "png", "svg", "jpg", "gif", "raw","cr2",
-                                        "nef", "orf", "sr2", "bmp", "tif"])
+                                        "nef", "orf", "sr2", "bmp", "tif", "ogv"])
     
     UNWANTEDDOCTYPESFOURCHARS = set(["tiff", "jpeg"])
 
@@ -142,14 +142,12 @@ class Worker():
 
             if self._workersPipeline.allDone:
                 logging.info("Terminou Operações")
-                # logging.info(f"SUCCESS PAGES: {len(self._successPages)}\n{self._successPages}")
-                # logging.info(f"ERRORS PAGES:{len(self._someErrorPages)}\n{self._someErrorPages}")
                 allWorkersFinished = True
             else:
                 self._tryToCompleteWithReceivedLinks()
         
         self._workersPipeline.setSaiu(self._id)
-        logging.info(f"SAIRAM:\n{self._workersPipeline.getSairam()}")
+        logging.info(f"NAO SAIRAM:\n{self._workersPipeline.getNaoSairam()}")
 
     def _crawlUntilItCan(self, webAccess:WebAccesser):
         
@@ -159,6 +157,7 @@ class Worker():
         while self._hasLinkToRequest() and not self._workersPipeline.allDone:
             
             completeLink, minTimestampToReq = self._getNextLinkAndMinTimestampToRequest()
+            logging.info(f"MIN_DELAY_CURR_PAGE:{minTimestampToReq} URL:{completeLink}")
             currHostWithSchema = utils.getHostWithSchemaOfLink(completeLink)
             hostInfo = self._hostsInfo.getHostInfo(currHostWithSchema)
 
@@ -173,8 +172,7 @@ class Worker():
                 if not hostInfo.emptyOfResources():
                     self._addHostToRequest(hostInfo.hostNameWithSchema, hostInfo.nextRequestAllowedTimestampFromNow())
             else:
-                #logging.info(f"should not access page {completeLink}")
-                pass
+                logging.info(f"should not access page")
 
             hostInfo.markResourceAsCrawled(utils.getResourcesFromLink(completeLink))
             shouldCheckForOtherLinksCount+=1
@@ -182,8 +180,6 @@ class Worker():
             if shouldCheckForOtherLinksCount == CHECK_FOR_OTHER_LINKS_EVERY_NUM_REQUESTS:
                 self._tryToCompleteWithReceivedLinks()
                 shouldCheckForOtherLinksCount = 0
-        
-        logging.info("FOI EMBORA")
 
     def _waitMinDelayIfNecessary(self, minTimestampToReq):
         now = datetime.datetime.now()
@@ -192,9 +188,7 @@ class Worker():
         if minTimeToWait > now:
             
             timeDiff = minTimeToWait - now
-            logging.info(f"Waiting delay {timeDiff.total_seconds()}")
             time.sleep(timeDiff.total_seconds())
-            logging.info(f"ESPEROU {timeDiff.total_seconds()} segundos")
     
     def _hasLinkToRequest(self) -> bool:
         return not self._hostsQueue.empty()
@@ -229,19 +223,8 @@ class Worker():
 
         try:
             webAccess.GETRequest(requestLink)
-        # except (TimeoutError, NewConnectionError) as e:
-        #     #logging.exception(f"Erro de conexão com {requestLink}. Recolocando na fila para tentar de novo")
-            
-        #     #Add the same link again for retry later
-        #     #as might have had internet problems
-        #     self.addLinkToRequest(requestLink)
-            
-        except MaxRetryError as e:
-            #logging.exception(f"Max Retries reached ERROR for: {requestLink}")
-            pass
 
         except Exception as e:
-            #logging.exception(f"Some error occurred while requesting {requestLink}")
             pass
         else:
 
