@@ -170,16 +170,11 @@ class WorkersPipeline():
         self._workerWaitingLinksEventsLocks[workerId].acquire()
         self._workerWaitingLinksEvents[workerId].set()
         self._workerWaitingLinksEventsLocks[workerId].release()
-        
-    def _unsetWorkerWaiting(self):
-        self._numWorkersWaitingLock.acquire()
-        self._numWorkersWaiting -= 1
-        self._numWorkersWaitingLock.release()
 
     def waitForLinkOrAllDoneEvent(self, workerId:int):
         self._setWorkerWaiting()
 
-        if not self._shouldStop():
+        if not self.allDone and not self._shouldStop():
             logging.info("Esperando")
             self._workerWaitingLinksEvents[workerId].wait()
             logging.info("Não esperando mais")
@@ -190,6 +185,11 @@ class WorkersPipeline():
         self._numWorkersWaitingLock.acquire()
         self._numWorkersWaiting += 1
         self._numWorkersWaitingLock.release()
+    
+    def _unsetWorkerWaiting(self):
+        self._numWorkersWaitingLock.acquire()
+        self._numWorkersWaiting -= 1
+        self._numWorkersWaitingLock.release()
 
     def _shouldStop(self):
 
@@ -197,21 +197,26 @@ class WorkersPipeline():
         everyWorkerWaiting = self._numWorkersWaiting == self._numWorkers
         self._numWorkersWaitingLock.release()
 
-        [lock.acquire() for _, lock in self._workerWaitingLinksEventsLocks.items()]
-        aWorkerSentLinksToAnother = any([event.is_set() for _, event in self._workerWaitingLinksEvents.items()])
-
         self._numPagesCrawledLock.acquire()
-        shouldStop = self._crawledPassMaxNumPages() or (everyWorkerWaiting and not aWorkerSentLinksToAnother)
+        shouldStop = self._crawledPassMaxNumPages()
         self._numPagesCrawledLock.release()
+
+        if not shouldStop:
+            [lock.acquire() for _, lock in self._workerWaitingLinksEventsLocks.items()]
+            aWorkerSentLinksToAnother = any([event.is_set() for _, event in self._workerWaitingLinksEvents.items()])
+
+            shouldStop = everyWorkerWaiting and not aWorkerSentLinksToAnother
+            [lock.release() for _, lock in self._workerWaitingLinksEventsLocks.items()]
 
         if shouldStop:
             logging.info("TIME TO STOP")
             self.setAllDone()
+            [lock.acquire() for _, lock in self._workerWaitingLinksEventsLocks.items()]
             self._wakeEveryWorkerToDie()
+            [lock.release() for _, lock in self._workerWaitingLinksEventsLocks.items()]
         else:
             logging.info("SHOULD NOT STOP")
         
-        [lock.release() for _, lock in self._workerWaitingLinksEventsLocks.items()]
         return shouldStop
 
     def setAllDone(self):
@@ -241,18 +246,18 @@ class WorkersPipeline():
         self._workersThatGotOut[workerId] = True
         self._workersThatGotOutLock.release()
     
-    def getSairam(self):
+    def getNaoSairam(self):
         self._workersThatGotOutLock.acquire()
-        sairamString = f"{self._workersThatGotOut}"
+        sairamString = f"{[threadId for threadId, gotOut in self._workersThatGotOut.items() if not gotOut]}"
         self._workersThatGotOutLock.release()
         return sairamString
     
     def saveResponse(self, response: urllib3.response.HTTPResponse, link:str):
 
-        if self._warcSaver.save(response, link):
-            self._addPageCrawledAndSaved()
+        if self._warcSaver.saveAndReturnIfSuccess(response, link):
+            self._addPageCrawledAndSaved(link)
     
-    def _addPageCrawledAndSaved(self):
+    def _addPageCrawledAndSaved(self, link:str):
         
         self._numPagesCrawledLock.acquire()
         self._numPagesCrawled += 1
