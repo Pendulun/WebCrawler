@@ -63,9 +63,15 @@ class WebAccesser():
         return hostRobots
 
     def GETRequest(self, link:str):
+        self._doRequest('GET', link)
+    
+    def HEADRequest(self, link:str):
+        self._doRequest('HEAD', link)
+    
+    def _doRequest(self, reqType:str, link:str):
         now = datetime.datetime.now()
         self._lastRequestTimestamp = datetime.datetime.timestamp(now)
-        self._lastResponse = self._poolManager.request('GET', link, headers=WebAccesser.REQ_HEADERS)
+        self._lastResponse = self._poolManager.request(reqType, link, headers=WebAccesser.REQ_HEADERS)
     
     def lastResponseTextBytes(self) -> bytes:
         if self._lastResponse != None:

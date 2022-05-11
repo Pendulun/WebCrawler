@@ -53,6 +53,9 @@ class Worker():
 
         #All hosts discovered with their policies
         self._hostsInfo = Host.HostsInfo()
+
+        #For Web access
+        self._webAccess = WebAccesser()
     
     @property
     def id(self) -> int:
@@ -132,11 +135,10 @@ class Worker():
     def crawl(self):
 
         allWorkersFinished = False
-        webAccess = WebAccesser()
 
         while not allWorkersFinished:
 
-            self._crawlUntilItCan(webAccess)
+            self._crawlUntilItCan()
             
             self._workersPipeline.waitForLinkOrAllDoneEvent(self._id)
 
@@ -149,7 +151,7 @@ class Worker():
         self._workersPipeline.setSaiu(self._id)
         logging.info(f"NAO SAIRAM:\n{self._workersPipeline.getNaoSairam()}")
 
-    def _crawlUntilItCan(self, webAccess:WebAccesser):
+    def _crawlUntilItCan(self):
         
         shouldCheckForOtherLinksCount = 0
         CHECK_FOR_OTHER_LINKS_EVERY_NUM_REQUESTS = 15
@@ -161,13 +163,13 @@ class Worker():
             currHostWithSchema = utils.getHostWithSchemaOfLink(completeLink)
             hostInfo = self._hostsInfo.getHostInfo(currHostWithSchema)
 
-            self._requestForRobotsOfHostIfNecessary(hostInfo, webAccess)
+            self._requestForRobotsOfHostIfNecessary(hostInfo)
 
             if self._shouldAccessPage(completeLink, hostInfo):
                 
                 self._waitMinDelayIfNecessary(minTimestampToReq)
 
-                self._accessPageAndGetLinks(webAccess, completeLink, hostInfo)
+                self._accessPageAndGetLinks(completeLink, hostInfo)
 
                 if not hostInfo.emptyOfResources():
                     self._addHostToRequest(hostInfo.hostNameWithSchema, hostInfo.nextRequestAllowedTimestampFromNow())
@@ -206,40 +208,49 @@ class Worker():
         hostInfo = self._hostsInfo.getHostInfo(host)
         return hostInfo.getNextResource()
 
-    def _requestForRobotsOfHostIfNecessary(self, hostInfo:Host.HostInfo, webAcess:WebAccesser):
+    def _requestForRobotsOfHostIfNecessary(self, hostInfo:Host.HostInfo):
         if not hostInfo.hasRobots():
-            hostInfo.tryFirstAccessToRobots(webAcess)
+            hostInfo.tryFirstAccessToRobots(self._webAccess)
     
     def _shouldAccessPage(self, completeLink:str, hostInfo:Host.HostInfo) -> bool:
 
         allowed = hostInfo.canAccessPage(completeLink)
-
         passHeuristics = UnwantedPagesHeuristics.passHeuristicsAccess(completeLink)
 
-        return allowed and passHeuristics
+        if not allowed or not passHeuristics:
+            return False
+        try:
+            self._webAccess.HEADRequest(completeLink)
+        except:
+            return False
+        else:
+            if self._webAccess.lastResponseHasTextHtmlContent():
+                return True
+            else:
+                return False
 
-    def _accessPageAndGetLinks(self, webAccess:WebAccesser, requestLink:str, hostInfo:Host.HostInfo):
+    def _accessPageAndGetLinks(self, requestLink:str, hostInfo:Host.HostInfo):
         currHostWithSchema = hostInfo.hostNameWithSchema
 
         try:
-            webAccess.GETRequest(requestLink)
+            self._webAccess.GETRequest(requestLink)
 
         except Exception as e:
             pass
         else:
 
-            if webAccess.lastRequestSuccess() and webAccess.lastResponseHasTextHtmlContent():
+            if self._webAccess.lastRequestSuccess() and self._webAccess.lastResponseHasTextHtmlContent():
                 
-                parsedHTML = Parser.HTMLParser.parseHTMLBytes(webAccess.lastResponseTextBytes())
+                parsedHTML = Parser.HTMLParser.parseHTMLBytes(self._webAccess.lastResponseTextBytes())
 
                 treatedUrls = self._getTreatedLinksFromPage(parsedHTML, currHostWithSchema)
 
                 self._distributeUrlsToWorkers(treatedUrls)
 
-                response = webAccess.lastResponse
+                response = self._webAccess.lastResponse
                 self._workersPipeline.saveResponse(response, requestLink)
                 
-                reqTimestamp = webAccess.lastRequestTimestamp
+                reqTimestamp = self._webAccess.lastRequestTimestamp
                 self._workersPipeline.printIfOnDebugMode(requestLink, reqTimestamp, parsedHTML)
 
     def _getTreatedLinksFromPage(self, parsedHTML:BeautifulSoup, currHostWithSchema:str):
