@@ -94,20 +94,24 @@ class HostInfo():
     
     def requestDelaySeconds(self) -> float:
         MIN_DELAY_TIME_SECONDS = 0.1
+        MAX_DELAY_TIME_SECONDS = 3
 
         if self._couldNotAccessRobots:
             return MIN_DELAY_TIME_SECONDS
-        
-        if self._robots == None:
+        elif self._robots == None:
             self.tryFirstAccessToRobots()
         
-            if self._robots == None:
-                return MIN_DELAY_TIME_SECONDS
-        
-        if self._robots.agent(HostInfo.AGENTNAME).delay == None:
+        if self._robots == None:
             return MIN_DELAY_TIME_SECONDS
-        else:
-            return self._robots.agent(HostInfo.AGENTNAME).delay
+        else:  
+            hostMinDelay = self._robots.agent(HostInfo.AGENTNAME).delay
+        
+            if hostMinDelay == None:
+                return MIN_DELAY_TIME_SECONDS
+            elif hostMinDelay > MAX_DELAY_TIME_SECONDS:
+                return MAX_DELAY_TIME_SECONDS
+            else: 
+                return hostMinDelay
 
     def tryFirstAccessToRobots(self, webAccess:WebAccesser.WebAccesser = None):
         if webAccess == None:
@@ -119,9 +123,11 @@ class HostInfo():
 
     def nextRequestAllowedTimestampFromNow(self):
         now = datetime.datetime.now()
-        delay = datetime.timedelta(seconds=self.requestDelaySeconds())
+        minDelay = self.requestDelaySeconds()
+        delay = datetime.timedelta(seconds=minDelay)
         nextAllowedTime = now + delay
-        return datetime.datetime.timestamp(nextAllowedTime)
+        nextAllowedReqTimestamp = datetime.datetime.timestamp(nextAllowedTime)
+        return nextAllowedReqTimestamp
 
     def getRequestsString(self) -> str:
         return str(self._resourcesQueue)
