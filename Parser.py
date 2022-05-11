@@ -30,6 +30,7 @@ class HTMLParser():
         for url in urls:
             if url != None and url.strip() != "":
                 if url[0] != "#":
+                    url = url.split("#")[0]
                     formatedUrl = ""
 
                     if url[0] == "/":
