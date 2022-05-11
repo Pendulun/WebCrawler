@@ -17,7 +17,7 @@ class WarcSaver():
         self._numSavedPages = 0
         self._currWarcFileId = 0
     
-    def save(self, response: urllib3.response.HTTPResponse, link:str):
+    def saveAndReturnIfSuccess(self, response: urllib3.response.HTTPResponse, link:str):
         self._warcFileLock.acquire()
         success = False
         with open(self._getCompleteWarcOutputFileName(), 'ab') as output:
@@ -37,7 +37,7 @@ class WarcSaver():
                 self._numSavedPages +=1
 
                 shouldSaveOnNewWarcFile = self._numSavedPages % WarcSaver.MAX_RESULTS_PER_WARC_FILE == 0
-                if shouldSaveOnNewWarcFile :
+                if shouldSaveOnNewWarcFile:
                     self._currWarcFileId +=1
                     logging.info("Atualizou nome warc file")
 
