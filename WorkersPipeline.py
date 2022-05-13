@@ -50,6 +50,9 @@ class WorkersPipeline():
         self._warcSaver = WarcSaver()
         self._debugPrinter = JsonPrinter()
 
+        self._resourcesPerHost = dict()
+        self._resourcesPerHostLock = Lock()
+
     @property
     def numWorkers(self) -> int:
         return self._numWorkers
@@ -175,9 +178,7 @@ class WorkersPipeline():
         self._setWorkerWaiting()
 
         if not self.allDone and not self._shouldStop():
-            logging.info("Esperando")
             self._workerWaitingLinksEvents[workerId].wait()
-            logging.info("Não esperando mais")
 
         self._unsetWorkerWaiting()
     
@@ -214,8 +215,6 @@ class WorkersPipeline():
             [lock.acquire() for _, lock in self._workerWaitingLinksEventsLocks.items()]
             self._wakeEveryWorkerToDie()
             [lock.release() for _, lock in self._workerWaitingLinksEventsLocks.items()]
-        else:
-            logging.info("SHOULD NOT STOP")
         
         return shouldStop
 
@@ -278,3 +277,15 @@ class WorkersPipeline():
             textToPrint = HTMLParser.getNFirstTextWords(parsedHTML, NUM_WORDS_TO_PRINT)
             title = parsedHTML.find('title').string
             self._debugPrinter.printJson(link, reqTimestamp, title, textToPrint)
+    
+    def addResourcesPerHost(self, hostAndNumResourcesMap:dict):
+        self._resourcesPerHostLock.acquire()
+        for host, numResources in hostAndNumResourcesMap.items():
+            if host in list(self._resourcesPerHost.keys()):
+                self._resourcesPerHost[host] += numResources
+            else:
+                self._resourcesPerHost[host] = numResources
+        self._resourcesPerHostLock.release()
+    
+    def getTotalResourcesPerHost(self):
+        return self._resourcesPerHost
