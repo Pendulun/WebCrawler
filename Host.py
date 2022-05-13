@@ -171,11 +171,19 @@ class HostsInfo():
         if not self.hostExists(host):
             self._hosts[host] = HostInfo(host)
     
-    def getCrawledResourcesPerHost(self) -> str:
+    def getCrawledResourcesPerHostStr(self) -> str:
         crawled = ""
 
         for host, hostInfo in self._hosts.items():
             crawled+=f"({host}):{hostInfo.getCrawledResourcesString()} "
+        
+        return crawled
+    
+    def getCrawledResourcesPerHostDict(self) -> str:
+        crawled = dict()
+
+        for host, hostInfo in self._hosts.items():
+            crawled[host]=hostInfo.getCrawledResourcesNum()
         
         return crawled
     
