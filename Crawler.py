@@ -71,7 +71,6 @@ class Crawler():
     def __distributeSeedsForWorkers(self, seedsFilePath: str):
         
         with open(seedsFilePath, 'r') as seedsFile:
-            logging.info("Abriu Arquivo")
             
             link = seedsFile.readline().rstrip('\n')
 
@@ -94,10 +93,11 @@ class Crawler():
             newThread.start()
 
         [thread.join() for thread in workersThreads]
-
-        #Pegar estatísticas
     
     def __getHostsAndResourcesFromWorkers(self):
         workers = [worker for (_,worker) in self._workersQueues.items()]
         for workerId, worker in enumerate(workers):
             logging.info(f"\n-----Worker:{workerId}-----\n{worker.getCrawlingInfo()}")
+    
+    def getResourcesNumPerHost(self) -> dict:
+        return self._workersPipeline.getTotalResourcesPerHost()
