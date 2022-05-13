@@ -41,7 +41,7 @@ def getHostWithSchemaOfLink(link:str) -> str:
         schemaAndHostParts = link.split("/")[:3]
         schemaAndHost = f"{schemaAndHostParts[0]}//{schemaAndHostParts[2]}"
     except Exception as e:
-        logging.exception(f"ERROR for link {link}:\n{e}")
+        pass
 
     return schemaAndHost
 

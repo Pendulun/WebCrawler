@@ -3,6 +3,7 @@ from Crawler import Crawler
 import logging
 import utils
 import sys
+import DebugPrinter
 
 class UndefinedCommandError(Exception):
     pass
@@ -67,8 +68,6 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(thread)d-%(threadName)s-%(levelname)s-%(message)s',
     filename="log.log", filemode="w")
 
-    #logging.disable(logging.INFO)
-
     MINNUMARGS = 5
 
     if len(sys.argv) < MINNUMARGS:
@@ -83,14 +82,13 @@ if __name__ == "__main__":
         else:
             logging.info(f"Todos o comandos foram aceitos {configs}")
 
-            NUMWORKERS = 110
+            NUMWORKERS = 80
             myCrawler = Crawler(configs['LIMIT'], NUMWORKERS, configs['debugMode'])
             try:
                 start = timer()
                 myCrawler.startCrawlingFromSeedsFile(configs['seedPathFile'])
                 end = timer()
                 totalTime = end - start
-                print(f"Elapsed Time: {totalTime}")
-                print(f"Num Of Pages Crawled : {myCrawler.pagesCrawled}")
+                logging.info(f"{DebugPrinter.JsonPrinter().getJsonOfDict(myCrawler.getResourcesNumPerHost())}")
             except FileNotFoundError as e:
                 utils.printErrorMessageAndExitWithErrorCode(e, 1)
