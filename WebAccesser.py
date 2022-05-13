@@ -49,7 +49,15 @@ class WebAccesser():
                                 )
     
     def getRobotsOf(self, url:str) -> reppy.Robots:
-        hostRobotsPath = reppy.Robots.robots_url(utils.normalizeLinkIfCan(url))
+        try:
+            url = utils.normalizeLinkIfCan(url)
+        except:
+            pass
+        
+        try:
+            hostRobotsPath = reppy.Robots.robots_url(url)
+        except:
+            return None
 
         hostRobots = None
         MAX_TIME_REQ_FOR_ROBOTS = 10.0
