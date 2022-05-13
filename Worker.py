@@ -47,6 +47,9 @@ class Worker():
 
         #Next host to request from
         self._hostsQueue = PriorityQueue()
+        self._currMinDelay = float("inf")
+        self._currMaxDelay = 0.0
+        self._firstAddToHostsQueue = True
 
         #Set of hosts currently on the _hostsQueue
         self._hostsOnQueue = set()
@@ -113,11 +116,21 @@ class Worker():
 
             self._putResourceIntoResourcesQueueOfHost(hostWithSchema, resources)
 
-            if hostWithSchema not in self._hostsOnQueue:
+            if firstTimeHost or hostWithSchema not in self._hostsOnQueue:
                 if firstTimeHost:
-                    self._addHostWithMaxPriorityToRequest(hostWithSchema)
+                    if self._firstAddToHostsQueue:
+                        self._firstAddToHostsQueue = False
+                        self._addHostWithMaxPriorityToRequest(hostWithSchema)
+                    else:
+                        self._addHostWithMediumPriorityToRequest(hostWithSchema)
+                        
                 else:
                     hostInfo = self._hostsInfo.getHostInfo(hostWithSchema)
+                    nextAllowedReqMinTimestamp = hostInfo.nextRequestAllowedTimestampFromNow()
+
+                    if nextAllowedReqMinTimestamp > self._currMaxDelay:
+                        self._currMaxDelay = nextAllowedReqMinTimestamp
+
                     self._addHostToRequest(hostWithSchema, hostInfo.nextRequestAllowedTimestampFromNow())
     
     def _putResourceIntoResourcesQueueOfHost(self, host:str, resource:str):
@@ -126,6 +139,12 @@ class Worker():
     
     def _addHostWithMaxPriorityToRequest(self, host:str):
         self._addHostToRequest(host, Worker.MAXPRIORITYFORHOST)
+    
+    def _addHostWithMediumPriorityToRequest(self, host:str):
+        hostMediumPriority = (self._currMaxDelay - self._currMinDelay) / 2
+        if hostMediumPriority < 0:
+            hostMediumPriority = 0
+        self._addHostToRequest(host, hostMediumPriority)
     
     def _addHostToRequest(self, host:str, priority:int):
         if host not in self._hostsOnQueue:
@@ -149,6 +168,7 @@ class Worker():
                 self._tryToCompleteWithReceivedLinks()
         
         self._workersPipeline.setSaiu(self._id)
+        self._workersPipeline.addResourcesPerHost(self._hostsInfo.getCrawledResourcesPerHostDict())
         logging.info(f"NAO SAIRAM:\n{self._workersPipeline.getNaoSairam()}")
 
     def _crawlUntilItCan(self):
@@ -159,7 +179,10 @@ class Worker():
         while self._hasLinkToRequest() and not self._workersPipeline.allDone:
             
             completeLink, minTimestampToReq = self._getNextLinkAndMinTimestampToRequest()
-            logging.info(f"MIN_DELAY_CURR_PAGE:{minTimestampToReq} URL:{completeLink}")
+
+            if minTimestampToReq < self._currMinDelay:
+                self._currMinDelay = minTimestampToReq
+            
             currHostWithSchema = utils.getHostWithSchemaOfLink(completeLink)
             hostInfo = self._hostsInfo.getHostInfo(currHostWithSchema)
 
@@ -174,7 +197,7 @@ class Worker():
                 if not hostInfo.emptyOfResources():
                     self._addHostToRequest(hostInfo.hostNameWithSchema, hostInfo.nextRequestAllowedTimestampFromNow())
             else:
-                logging.info(f"should not access page")
+                pass
 
             hostInfo.markResourceAsCrawled(utils.getResourcesFromLink(completeLink))
             shouldCheckForOtherLinksCount+=1
