@@ -35,7 +35,9 @@ class HTMLParser():
 
                     if url[0] == "/":
                         formatedUrl = f"{host}{url}"
-                    elif (len(url) >= 4 and url[:4] == "http") or (len(url) >= 5 and url[:5] == "https"):
+                    elif (len(url) >= 4 and url[:4] == "http") and not (len(url) >= 5 and url[:5] == "https"):
+                        formatedUrl = "https"+url[4:]
+                    elif (len(url) >= 5 and url[:5] == "https"):
                         formatedUrl = url
 
                     if(formatedUrl != ""):
